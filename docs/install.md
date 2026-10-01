@@ -1,5 +1,7 @@
 # Installing
 
+**Fork scope:** this guide is inherited from upstream. This fork targets only Retroid Pocket 6 with Snapdragon 8 Gen 2 / SM8550, 12 GB RAM, booting SteamOS from microSD. Follow [RP6-SCOPE.md](RP6-SCOPE.md); instructions for other devices are upstream reference material. Upstream downloads are not hardware-validated releases of this fork.
+
 You need a 32GB+ microSD card and a PC.
 
 1. Flash [ROCKNIX ABL](https://github.com/ROCKNIX/abl/releases) 1.1.8 or newer for your chip to `abl_a` and `abl_b`: `abl_signed-SM8650.elf` for 8 Gen 3, `abl_signed-SM8550.elf` for 8 Gen 2. Android still boots from its menu.

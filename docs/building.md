@@ -1,5 +1,7 @@
 # Building
 
+**Fork scope:** build for Retroid Pocket 6, Snapdragon 8 Gen 2 / SM8550, using `SOC=sm8550`. Hardware acceptance uses the 12 GB RAM model with SteamOS on microSD. Other SoC build paths below are inherited upstream reference material. See [RP6-SCOPE.md](RP6-SCOPE.md).
+
 I build everything in an arm64 Linux VM (Colima on a Mac).
 
 - Kernels: `external-and-mods/kernel-sm8650/build.sh` and `external-and-mods/kernel-sm8550/build.sh` (shared script in `kernel-common/`, chip specific bits in each `soc.env`)

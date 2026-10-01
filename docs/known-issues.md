@@ -1,12 +1,16 @@
-# Known issues
+# RP6 validation status and limitations
 
-## 8 Gen 3 (KONKR Pocket FIT, AYANEO Pocket S2)
+This fork targets **Retroid Pocket 6, Snapdragon 8 Gen 2 / SM8550, 12 GB RAM, with SteamOS installed on and booted from microSD**. See [RP6-SCOPE.md](RP6-SCOPE.md) for the hardware test policy.
 
-- **Games flicker below 1080p** (picture jumps between full screen and the top-left corner). Fixed by the [v1.2.1 hotfix](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds/releases/tag/v1.2.1), and built into v1.3.
+## Current development scope
 
-## 8 Gen 2 (beta)
+The priority is button layout and rear buttons, then power management, then measured SteamOS and game performance. Each change needs its own image and hardware acceptance results. This page does not mark those modules complete.
 
-- Nobody has booted this on real hardware yet, that's what the beta is for.
-- No internal storage installer yet, SD card only.
+## Validation limits
 
-If something else breaks for you, [open an issue](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds/issues) and say which device you have.
+- Other RP6 RAM variants, TOP-DPAD, Nova and other handhelds have not been validated by this fork.
+- Internal UFS installation is outside the tested configuration.
+- Battery, standby, thermal and performance figures from Pocket FIT or other upstream devices do not apply to this RP6 without measurement.
+- Automated checks and successful builds do not establish hardware acceptance of a new image.
+
+For upstream device reports, consult the [upstream tracker](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds/issues). Keep the device, image and component versions attached to every result.
