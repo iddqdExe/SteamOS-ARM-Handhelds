@@ -49,8 +49,6 @@ The original multi-device port is maintained in [hashtagbasit/SteamOS-ARM-Handhe
 
 Kernel and device work comes from [ROCKNIX](https://github.com/ROCKNIX/distribution), with groundwork from [MaSi's SM8550 project](https://github.com/MaSieS4Fun/SteamOS-ARM-SM8550). See [CREDITS.md](CREDITS.md) for acknowledgements.
 
-To support the original upstream developer, the upstream donation links are [Ko-fi](https://ko-fi.com/aimalb) and [PayPal](https://paypal.me/Basit2000).
-
 ## License
 
 Project scripts and overlays are GPL-2.0. Components in `external-and-mods/` retain their own licenses. See [LICENSE](LICENSE).
