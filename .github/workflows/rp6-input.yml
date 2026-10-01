@@ -1,0 +1,42 @@
+name: RP6 input delivery
+on:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'make-steamos-sm8650.sh'
+      - 'steamos-overlay/etc/inputplumber/**'
+      - 'sm8550-overlay/etc/inputplumber/**'
+      - 'steamos-overlay/usr/lib/steamos/rp6-input-config.py'
+      - 'steamos-overlay/usr/lib/steamos/sm8550-fixpad'
+      - 'steamos-overlay/usr/lib/systemd/system/sm8550-fixpad.service'
+      - 'steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/**'
+      - 'external-and-mods/konkr-update/konkr-update.py'
+      - '.github/workflows/rp6-input.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'make-steamos-sm8650.sh'
+      - 'steamos-overlay/etc/inputplumber/**'
+      - 'sm8550-overlay/etc/inputplumber/**'
+      - 'steamos-overlay/usr/lib/steamos/rp6-input-config.py'
+      - 'steamos-overlay/usr/lib/steamos/sm8550-fixpad'
+      - 'steamos-overlay/usr/lib/systemd/system/sm8550-fixpad.service'
+      - 'steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/**'
+      - 'external-and-mods/konkr-update/konkr-update.py'
+      - '.github/workflows/rp6-input.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y device-tree-compiler binutils rsync
+      - run: python -m pip install -r scripts/tests/requirements.txt
+      - run: python -m unittest discover -s scripts/tests -v
+      - run: |
+          for input_script in scripts/install-inputplumber-sm8550.sh scripts/import-sm8550-kernel.sh scripts/check-rp6-input.sh make-steamos-sm8650.sh; do
+            bash -n "$input_script"
+          done

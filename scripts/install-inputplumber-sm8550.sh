@@ -2,6 +2,8 @@
 # Install ShadowBlip InputPlumber + SM8550 deck-uhid composite into a SteamOS rootfs.
 # deck-uhid (Steam Deck controller) + keyboard target (touch OSK haptic).
 # USB/Bluetooth HID is ignored in the composite so it is not grabbed.
+# Usage: install-inputplumber-sm8550.sh <rootfs> [--config-only]
+# --config-only refreshes profiles/maps without downloading or replacing binaries.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +21,9 @@ log() { printf '==> [inputplumber] %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ -d "${R}/usr" ]] || die "not a rootfs: ${R}"
-mkdir -p "${CACHE}"
+MODE="${2:-}"
+[[ "$MODE" == "" || "$MODE" == --config-only ]] || die "unknown mode: $MODE"
+[[ $# -le 2 ]] || die "usage: $0 <rootfs> [--config-only]"
 
 fetch() {
   local url="$1" dest="$2"
@@ -68,6 +72,8 @@ install_tarball() {
   mkdir -p "${R}/usr" "${R}/etc"
   cp -a "${src}/usr/." "${R}/usr/"
   if [[ -d "${src}/etc" ]]; then
+    # Input configuration is merged below, never overwritten by the release tar.
+    rm -rf "${src}/etc/inputplumber"
     cp -a "${src}/etc/." "${R}/etc/"
   fi
   [[ -x "${R}/usr/bin/inputplumber" ]] || die "inputplumber binary missing after extract"
@@ -132,17 +138,52 @@ install_odin_composite() {
   install -d "${R}/etc/inputplumber/devices.d" \
     "${R}/etc/inputplumber/capability_maps.d" \
     "${R}/usr/share/inputplumber/capability_maps" \
+    "${R}/usr/share/konkr-update" \
+    "${R}/usr/lib/steamos" "${R}/usr/lib/udev/rules.d" \
     "${R}/usr/lib/systemd/system/inputplumber.service.d" \
     "${R}/etc/systemd/system/multi-user.target.wants"
-  install -m0644 "${OVL}/etc/inputplumber/devices.d/02-ayn-odin.yaml" \
-    "${R}/etc/inputplumber/devices.d/02-ayn-odin.yaml"
+  if [[ ! -e "${R}/etc/inputplumber/devices.d/02-ayn-odin.yaml" && ! -L "${R}/etc/inputplumber/devices.d/02-ayn-odin.yaml" ]]; then
+    install -m0644 "${OVL}/etc/inputplumber/devices.d/02-ayn-odin.yaml" \
+      "${R}/etc/inputplumber/devices.d/02-ayn-odin.yaml"
+  fi
+  # Image-only builds also call this installer, without apply-overlays.sh.
+  # Deliver the RP6 composite here so its D-pad/menu/paddle map is selected.
   # Every map, not just ayn_mcu: the RP6 profile points at retroid_mcu and
   # without the file InputPlumber passed the raw buttons through (A/B swapped).
   local m
   for m in "${OVL}"/etc/inputplumber/capability_maps.d/*.yaml; do
-    install -m0644 "$m" "${R}/etc/inputplumber/capability_maps.d/${m##*/}"
+    [[ "${m##*/}" == retroid_mcu.yaml ]] && continue
+    if [[ ! -e "${R}/etc/inputplumber/capability_maps.d/${m##*/}" && ! -L "${R}/etc/inputplumber/capability_maps.d/${m##*/}" ]]; then
+      install -m0644 "$m" "${R}/etc/inputplumber/capability_maps.d/${m##*/}"
+    fi
     install -m0644 "$m" "${R}/usr/share/inputplumber/capability_maps/${m##*/}"
   done
+  install -m0755 "${OVL}/usr/lib/steamos/rp6-input-config.py" \
+    "${R}/usr/lib/steamos/rp6-input-config.py"
+  # Image-only builds need the same pre-InputPlumber axis calibration as
+  # full overlay builds, including the measured RP6 signed trigger range.
+  install -m0755 "${OVL}/usr/lib/steamos/sm8550-fixpad" \
+    "${R}/usr/lib/steamos/sm8550-fixpad"
+  install -m0644 "${OVL}/usr/lib/systemd/system/sm8550-fixpad.service" \
+    "${R}/usr/lib/systemd/system/sm8550-fixpad.service"
+  ln -sfn /usr/lib/systemd/system/sm8550-fixpad.service \
+    "${R}/etc/systemd/system/multi-user.target.wants/sm8550-fixpad.service"
+  local defaults
+  defaults="$(mktemp -d)"
+  install -d "$defaults/devices.d" "$defaults/capability_maps.d"
+  install -m0644 "${ROOT}/sm8550-overlay/etc/inputplumber/devices.d/02-retroid-pocket.yaml" \
+    "$defaults/devices.d/02-retroid-pocket.yaml"
+  install -m0644 "${OVL}/etc/inputplumber/capability_maps.d/retroid_mcu.yaml" \
+    "$defaults/capability_maps.d/retroid_mcu.yaml"
+  if ! python3 "${R}/usr/lib/steamos/rp6-input-config.py" "$R" --source "$defaults"; then
+    rm -rf "$defaults"
+    die "RP6 configuration merge failed"
+  fi
+  rm -rf "$defaults"
+  # Bootstrap preservation before the first update of a staged beta8 rootfs.
+  # The deployed updater copies itself into recovery when it stages a package.
+  install -m0755 "${ROOT}/external-and-mods/konkr-update/konkr-update.py" \
+    "${R}/usr/share/konkr-update/konkr-update.py"
   install -m0644 "${OVL}/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf" \
     "${R}/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf"
   install -m0755 "${OVL}/usr/lib/steamos/sm8550-inputplumber-ext-hid" \
@@ -157,47 +198,21 @@ install_odin_composite() {
     "${R}/lib/udev/rules.d/71-sm8550-ext-hid.rules"
   ln -sfn /usr/lib/systemd/system/sm8550-inputplumber-ext-hid.service \
     "${R}/usr/lib/systemd/system/multi-user.target.wants/sm8550-inputplumber-ext-hid.service"
-  # Keep 02-ayn-odin.yaml (deck-uhid + keyboard). Drop Ubuntu-named
-  # composites and any leftover mouse composite from the tarball.
-  rm -f "${R}/etc/inputplumber/devices.d/"*mouse* \
-    "${R}/etc/inputplumber/devices.d/02-ayn-controller.yaml" \
-    "${R}/etc/inputplumber/devices.d/01-ayn-controller.yaml"
+  # Existing composites are user-owned; do not remove them by filename.
   ln -sfn /usr/lib/systemd/system/inputplumber.service \
     "${R}/etc/systemd/system/multi-user.target.wants/inputplumber.service"
 }
 
 verify_needed() {
-  python3 - "${R}/usr/bin/inputplumber" "${R}" <<'PY'
-import pathlib, struct, sys
-binary, root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-data = binary.read_bytes()
-if data[:4] != b"\x7fELF":
-    raise SystemExit("not ELF")
-needed = []
-# Parse DT_NEEDED via a cheap scan of dynamic strings after readelf-less fallback
-try:
-    import subprocess
-    out = subprocess.check_output(["readelf", "-d", str(binary)], text=True)
-    for line in out.splitlines():
-        if "NEEDED" in line and "[" in line:
-            needed.append(line.split("[", 1)[1].split("]", 1)[0])
-except Exception:
-    pass
-missing = []
-libdirs = [root / "usr/lib", root / "usr/lib64", root / "lib"]
-for soname in needed:
-    if soname in {"linux-vdso.so.1", "ld-linux-aarch64.so.1"}:
-        continue
-    if any((d / soname).exists() for d in libdirs):
-        continue
-    missing.append(soname)
-print("NEEDED:", ", ".join(needed) or "(unknown)")
-if missing:
-    raise SystemExit("missing libraries in rootfs: " + ", ".join(missing))
-print("all NEEDED libs present in rootfs")
-PY
+  python3 "$SCRIPT_DIR/check-inputplumber-elf.py" "$R/usr/bin/inputplumber" "$R"
 }
 
+if [[ "$MODE" == --config-only ]]; then
+  install_odin_composite
+  log "SM8550 input configuration refreshed (binaries unchanged)"
+  exit 0
+fi
+mkdir -p "${CACHE}"
 install_tarball
 install_libiio
 install_odin_composite

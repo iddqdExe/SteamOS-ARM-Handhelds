@@ -1,0 +1,89 @@
+{
+  "kind": "RP6 module 1 hardware acceptance summary",
+  "validation_date": "2026-10-02",
+  "device": {
+    "model": "Retroid Pocket 6",
+    "soc": "SM8550",
+    "memory_GiB": 12,
+    "medium": "microSD"
+  },
+  "kernel": "7.0.14-edge-sm8550",
+  "inputplumber": "0.81.0",
+  "image_sha256": "6b228352828d44f842996c841a28c4d99a8194dbf294b18bb5bba2b270330d65",
+  "installed_component_sha256": {
+    "usr/lib/steamos/rp6-input-config.py": "6c7dfc65a160bf76d04d23d25170778b41e341fd8b11a77f69127c7a20f30fb2",
+    "usr/lib/steamos/sm8550-fixpad": "691dd39f3718d20e8921df793526432789665c0c5df7a4035a1f27e414ebe994",
+    "usr/lib/systemd/system/sm8550-fixpad.service": "23d924ab4819c8ef70390420067390459ca1ed85e85d24d81a64bfbfea6e4759",
+    "usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf": "c5223adc6c3bd1289a9ea98b4be2e4697c4b0d45602d32ce1fd82b7ebfc68ed5",
+    "usr/share/konkr-update/konkr-update.py": "936791927c3ab21ee5bf1e91570938498e3f0230a96e4f008af0cc684ae6a41e",
+    "etc/inputplumber/capability_maps.d/retroid_mcu.yaml": "b0eefc986b6b4e4011c137b1eb29ad3a3d7caefdd49f4a10b30262dff1e25e8b",
+    "etc/inputplumber/devices.d/02-retroid-pocket.yaml": "2a6b339445efffb9f676472ed65aa3bf80b147ebe55a31810d5b4cf9a25f9539",
+    "boot/KERNEL": "92911ae45bb04317baa42e5a1a9028e7b47ed4e69d481fd391f42aec12e51e1d",
+    "usr/bin/inputplumber": "b90ffa3ad42ba086a0965e9c061158bf7403f3835fe2d4cde8233f030a3b096c"
+  },
+  "fresh_install": {
+    "accepted": true,
+    "manual_input_fixes_required": false,
+    "checks": {
+      "factory_buttons_and_analog_LT_RT": "passed_by_user",
+      "guide_quickaccess_volume": "passed_by_user",
+      "independent_L4_R4_in_game": "passed_by_user",
+      "no_double_input_or_duplicate_builtin_controller": "passed_by_user",
+      "sleep_resume": "passed_by_user",
+      "cold_boot": "passed_by_user",
+      "game_desktop_game_transition": "passed_by_user",
+      "home_expansion": "passed_live_458.3866_GiB",
+      "installed_files_and_service_health": "passed_live_hashes_active_services_zero_warnings"
+    }
+  },
+  "same_kernel_update_and_explicit_rollback": {
+    "package_version": "0.1.0-alpha.1+validation.20261002.dirty",
+    "package_sha256": "747786ab4e1cc3dc77cf439ef1d1de5f0632410c07b6aec984db9f4d9b86c196",
+    "package_published": false,
+    "payload_files_verified": 192629,
+    "update_state": "committed",
+    "update_checks": {
+      "marker_updated": true,
+      "custom_profile_preserved": true,
+      "home_test_save_preserved": true,
+      "identity_preserved": true,
+      "kernel_identical": true,
+      "inputplumber_active": true,
+      "inputplumber_no_warnings": true,
+      "native_analog_trigger_ranges_and_single_virtual_controller": true
+    },
+    "rollback_state": "rolled-back",
+    "rollback_checks": {
+      "marker_restored_before": true,
+      "custom_profile_preserved": true,
+      "home_test_save_preserved": true,
+      "identity_preserved": true,
+      "previous_kernel_restored": true,
+      "inputplumber_active": true,
+      "inputplumber_no_warnings": true,
+      "native_analog_trigger_ranges_and_single_virtual_controller": true
+    },
+    "all_nine_components_restored": true,
+    "pending_update": false,
+    "controller_smoke_test": "passed_by_user_in_Game_Mode; analog LT/RT, both menus, L4=A and R4=B preserved",
+    "Steam_controller_VDF_hashes": {
+      "unchanged": 46,
+      "total": 47,
+      "changed_kind": "ugc/referenced controller configuration",
+      "change_cause": "not_established",
+      "assignments_after_rollback": "confirmed_by_user"
+    },
+    "approximate_update_boot_wait_minutes": 20,
+    "approximate_rollback_boot_wait_minutes": 8,
+    "fixtures_removed": true,
+    "original_sshd_autostart_restored": true
+  },
+  "qualification_limits": [
+    "same-kernel successful transaction only",
+    "no failed-kernel or power-loss test",
+    "no full-card backup/restore test",
+    "TOP-DPAD, Nova and other handheld models not tested",
+    "no public release"
+  ],
+  "raw_evidence": "Local preparation/module1 material outside Git; account, network and SSH data omitted from this summary"
+}

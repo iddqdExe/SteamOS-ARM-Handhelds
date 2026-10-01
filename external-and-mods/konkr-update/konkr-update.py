@@ -30,10 +30,12 @@ SOC_MODELS = {
 SUPPORTED_MODELS = {m for models in SOC_MODELS.values() for m in models}
 ROOT_DIRS = ('usr', 'opt', 'etc')
 UPPER = 'var/lib/overlays/etc/upper'
+INPUT_STATE = 'var/lib/rp6-input'
+SNAPSHOT_DIRS = (*ROOT_DIRS, UPPER, INPUT_STATE)
 HOME_DIRS = ('homebrew/plugins/konkr-control', 'homebrew/plugins/decky-lsfg-vk')
 PRESERVE = ('passwd', 'shadow', 'group', 'gshadow', 'machine-id', 'hostname', 'hosts',
             'fstab', 'crypttab', 'localtime', 'adjtime', 'resolv.conf', 'ssh',
-            'NetworkManager/system-connections', 'sudoers.d')
+            'NetworkManager/system-connections', 'sudoers.d', 'inputplumber')
 PENDING = 'var/lib/konkr-update/pending'
 
 
@@ -267,8 +269,8 @@ def install_kernel(src, boot):
 
 def snapshot(root, home, work):
     backup = work / 'backup'
-    write_json(backup / 'root-presence.json', {rel: (root / rel).exists() for rel in (*ROOT_DIRS, UPPER)})
-    for rel in (*ROOT_DIRS, UPPER):
+    write_json(backup / 'root-presence.json', {rel: (root / rel).exists() for rel in SNAPSHOT_DIRS})
+    for rel in SNAPSHOT_DIRS:
         src = root / rel
         if src.exists(): copy_tree(src, backup / 'root' / rel)
     for rel in HOME_DIRS:
@@ -286,7 +288,8 @@ def snapshot(root, home, work):
 def restore(root, boot, home, work):
     backup = work / 'backup'
     present_root = json.loads((backup / 'root-presence.json').read_text())
-    for rel in (*ROOT_DIRS, UPPER):
+    for rel in SNAPSHOT_DIRS:
+        if rel not in present_root: continue  # Older snapshots have no input receipt.
         src = backup / 'root' / rel
         if present_root[rel]: copy_tree(src, root / rel, delete=True)
         elif (root / rel).exists(): shutil.rmtree(root / rel)
@@ -310,6 +313,10 @@ def apply(root, boot, home, work, manifest):
     copy_tree(payload / 'root/etc', root / 'etc', delete=True, excludes=PRESERVE)
     upper = payload / 'root' / UPPER
     if upper.exists(): copy_tree(upper, root / UPPER, excludes=PRESERVE)
+    # Preserve user profiles/remaps; advance only known, unmodified RP6 defaults.
+    defaults = root / 'usr/share/rp6-input/defaults'
+    if defaults.is_dir():
+        run(sys.executable, root / 'usr/lib/steamos/rp6-input-config.py', root)
     for rel in HOME_DIRS:
         src = payload / 'home/steamos' / rel
         if not src.is_dir(): raise ValueError(f'missing home migration: {rel}')

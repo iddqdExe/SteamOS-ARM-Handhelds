@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Set SM8550 rsinput stick ABS range to ±740.
+"""Set SM8550 rsinput stick ABS range to ±740 and correct RP6 triggers.
 
 The kernel pad (AYN Odin2 / Thor / RSInput Gamepad) reports ~±1407/1408.
 That is fine for Steam games that normalize, but many emulators treat the
 raw max as the travel and cannot be remapped. ±740 matches the working
 handheld userspace.
+
+On RP6 with 7.0.14-edge-sm8550, the native triggers actually report
+-32768..32767 while advertising 0..1830. Correct that metadata before
+InputPlumber caches it, so the whole analog travel can be normalized.
+This trigger correction is limited to the measured model and kernel.
 
 This only changes absinfo on the native evdev node (EVIOCSABS). It does
 not grab the device, does not create a virtual keyboard, and does not
@@ -26,6 +31,7 @@ NAMES = {
 }
 SKIP = ("Motion", "Touch", "Headset", "Keyboard", "Mouse", "mapped")
 AXES = ((0, "left X"), (1, "left Y"), (3, "right X"), (4, "right Y"))
+TRIGGER_AXES = ((2, "left trigger"), (5, "right trigger"))
 ABSINFO = "iiiiii"
 ABSINFO_SIZE = struct.calcsize(ABSINFO)
 
@@ -76,21 +82,33 @@ def iter_gamepads() -> list[tuple[str, str]]:
     return found
 
 
-def apply_one(path: str, target: int) -> None:
+def rp6_signed_trigger_kernel() -> bool:
+    try:
+        with open("/sys/firmware/devicetree/base/model", encoding="utf-8") as source:
+            model = source.read().rstrip("\x00\n")
+    except OSError:
+        return False
+    return model == "Retroid Pocket 6" and os.uname().release == "7.0.14-edge-sm8550"
+
+
+def apply_one(path: str, target: int, correct_triggers: bool = False) -> None:
     fd = os.open(path, os.O_RDWR)
     try:
-        for code, label in AXES:
+        for code, label in AXES + (TRIGGER_AXES if correct_triggers else ()):
             buf = bytearray(ABSINFO_SIZE)
             fcntl.ioctl(fd, eviocgabs(code), buf)
             value, amin, amax, fuzz, flat, res = struct.unpack(ABSINFO, buf)
+            lower, upper = (-32768, 32767) if code in (2, 5) else (-target, target)
             fcntl.ioctl(
                 fd,
                 eviocsabs(code),
-                struct.pack(ABSINFO, value, -target, target, fuzz, flat, res),
+                struct.pack(ABSINFO, value, lower, upper, fuzz, flat, res),
             )
             buf2 = bytearray(ABSINFO_SIZE)
             fcntl.ioctl(fd, eviocgabs(code), buf2)
             _, nmin, nmax, *_ = struct.unpack(ABSINFO, buf2)
+            if code in (2, 5) and (nmin, nmax) != (lower, upper):
+                raise RuntimeError(f"{label}: trigger range readback failed: {nmin}..{nmax}")
             print(f"  {label}: {amin}..{amax} → {nmin}..{nmax}")
     finally:
         os.close(fd)
@@ -105,7 +123,7 @@ def status() -> int:
         print(f"{label}  {path}")
         fd = os.open(path, os.O_RDONLY)
         try:
-            for code, axis in AXES:
+            for code, axis in AXES + TRIGGER_AXES:
                 buf = bytearray(ABSINFO_SIZE)
                 fcntl.ioctl(fd, eviocgabs(code), buf)
                 _v, amin, amax, *_ = struct.unpack(ABSINFO, buf)
@@ -115,14 +133,20 @@ def status() -> int:
     return 0
 
 
-def apply(target: int) -> int:
+def apply(target: int, correct_triggers: bool = True) -> int:
+    correct_triggers = correct_triggers and rp6_signed_trigger_kernel()
     pads = iter_gamepads()
+    if correct_triggers:
+        pads = [pad for pad in pads if pad[1].endswith(" (rsinput-gamepad/input0)")]
     if not pads:
+        if correct_triggers:
+            print("sm8550-fixpad: RP6 native pad not ready; calibration must retry", file=sys.stderr)
+            return 1
         print("sm8550-fixpad: no rsinput gamepad yet (ok at early boot)", file=sys.stderr)
         return 0
     path, label = pads[0]
     print(f"sm8550-fixpad: {label}  {path}  target ±{target}")
-    apply_one(path, target)
+    apply_one(path, target, correct_triggers)
     return 0
 
 
@@ -134,7 +158,7 @@ def main() -> int:
     if cmd == "status":
         return status()
     if cmd == "restore":
-        return apply(1408)
+        return apply(1408, correct_triggers=False)
     if cmd == "apply":
         target = TARGET
         if len(sys.argv) > 2:

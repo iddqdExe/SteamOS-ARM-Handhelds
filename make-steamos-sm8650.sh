@@ -342,6 +342,11 @@ detach_img_loops() {
 build_image() {
   local total_mib root_uuid home_uuid disk_id
   local boot_dev root_dev home_dev
+  # Fail before truncating an image if a reused rootfs/prebuilt kernel
+  # would ship the old RP6 D-pad/menu/paddle failures again.
+  if [[ "$SOC" == sm8550 ]]; then
+    "${SCRIPTS}/check-rp6-input.sh" "$R" "${KOUT}/boot/KERNEL"
+  fi
   command -v sfdisk >/dev/null || die "sfdisk missing"
   command -v mkfs.vfat >/dev/null || die "mkfs.vfat missing"
   command -v mkfs.ext4 >/dev/null || die "mkfs.ext4 missing"

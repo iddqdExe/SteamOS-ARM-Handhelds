@@ -168,6 +168,10 @@ assert sum(map(len, dtbs)) == len(rest), "unexpected data between the DTBs"
 k = k[:img_len] + b"".join(out)
 open(sys.argv[2], "wb").write(k)
 PY
+# The older prebuilt RP6 DTBs have volume-up only under gpio-keys. Port the
+# verified GPIO57/58 fix before repacking; preserve Image.gz and other DTBs.
+python3 "$repo/scripts/fix-rp6-paddles.py" "$work/kernel.bin" "$work/kernel-paddles.bin"
+mv "$work/kernel-paddles.bin" "$work/kernel.bin"
 rd="$work/initramfs"
 mkdir -p "$rd/root/bin" "$rd/root/dev" "$rd/root/proc" "$rd/root/sys"
 cp /bin/busybox "$rd/root/bin/busybox"
