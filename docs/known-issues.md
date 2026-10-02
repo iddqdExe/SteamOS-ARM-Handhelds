@@ -12,5 +12,10 @@ The priority is button layout and rear buttons, then power management, then meas
 - Internal UFS installation is outside the tested configuration.
 - Battery, standby, thermal and performance figures from Pocket FIT or other upstream devices do not apply to this RP6 without measurement.
 - Automated checks and successful builds do not establish hardware acceptance of a new image.
+- UP-01 hardware acceptance found a black physical screen after software standby
+  in DMC, with audio and game rendering still running. QAM was also invisible;
+  an explicit panel wake and a separate DPMS off/on cycle did not recover it.
+  A reboot restored visible Game Mode. Standby remains unaccepted; the cause
+  is under investigation. See [RP6-UP-01.ru.md](RP6-UP-01.ru.md).
 
 For upstream device reports, consult the [upstream tracker](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds/issues). Keep the device, image and component versions attached to every result.
