@@ -71,6 +71,47 @@ class ConfigUpgradeTests(unittest.TestCase):
         self.assertEqual((self.root / PROFILE).read_text(), 'unknown device profile\n')
         self.assertIn('preserved', result.stdout)
 
+    def test_upgrades_exact_legacy_factory_profile_without_receipt_and_rolls_back(self):
+        legacy = (REPO / 'scripts/tests/fixtures/rp6-profile-module1-v1.yaml').read_text()
+        self.put(PROFILE, legacy)
+        upper_profile = UPPER + '/inputplumber/devices.d/02-retroid-pocket.yaml'
+        self.put(upper_profile, legacy)
+        custom_map = self.put(MAP, 'my custom map\n')
+        steam = self.put('home/steamos/.steam/steam/userdata/42/config/localconfig.vdf', 'my Steam Input binds')
+        result = self.run_tool(); self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / PROFILE).read_text(), 'new profile\n')
+        self.assertEqual((self.root / upper_profile).read_text(), 'new profile\n')
+        self.assertEqual(custom_map.read_text(), 'my custom map\n')
+        self.assertEqual(steam.read_text(), 'my Steam Input binds')
+        rolled = self.run_tool(True); self.assertEqual(rolled.returncode, 0, rolled.stderr)
+        self.assertEqual((self.root / PROFILE).read_text(), legacy)
+        self.assertEqual((self.root / upper_profile).read_text(), legacy)
+        self.assertEqual(custom_map.read_text(), 'my custom map\n')
+        self.assertEqual(steam.read_text(), 'my Steam Input binds')
+
+    def test_preserves_user_edit_to_legacy_factory_profile_without_receipt(self):
+        legacy = (REPO / 'scripts/tests/fixtures/rp6-profile-module1-v1.yaml').read_text()
+        customized = legacy + '\n# my device customization\n'
+        self.put(PROFILE, customized)
+        (self.root / UPPER).mkdir(parents=True)
+        result = self.run_tool(); self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / PROFILE).read_text(), customized)
+        self.assertFalse((self.root / UPPER / 'inputplumber/devices.d/02-retroid-pocket.yaml').exists())
+
+    def test_upgrades_both_legacy_factory_files_in_both_layers_without_receipt(self):
+        originals = {}
+        for name, path in [('rp6-profile-module1-v1.yaml', PROFILE), ('rp6-map-module1-v1.yaml', MAP)]:
+            legacy = (REPO / 'scripts/tests/fixtures' / name).read_text()
+            for rel in (path, UPPER + '/' + path.removeprefix('etc/')):
+                self.put(rel, legacy); originals[rel] = legacy
+        result = self.run_tool(); self.assertEqual(result.returncode, 0, result.stderr)
+        for rel in originals:
+            expected = 'new profile\n' if rel.endswith('02-retroid-pocket.yaml') else 'new map\n'
+            self.assertEqual((self.root / rel).read_text(), expected)
+        rolled = self.run_tool(True); self.assertEqual(rolled.returncode, 0, rolled.stderr)
+        for rel, legacy in originals.items():
+            self.assertEqual((self.root / rel).read_text(), legacy)
+
     def test_does_not_shadow_custom_lower_config_with_a_new_upper_default(self):
         self.put(MAP, 'custom lower map\n')
         (self.root / UPPER).mkdir(parents=True)

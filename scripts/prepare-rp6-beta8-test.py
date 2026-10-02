@@ -25,6 +25,8 @@ REPO = Path(__file__).resolve().parents[1]
 BASE_SHA = '56f8541a5743d4fdb624cce09f9a4a34cd53608029e55ef51740403145f43147'
 SIZE = 16447963136
 LAYOUT = [(0x0c, 2048, 1048576), (0x83, 1050624, 23939072), (0x83, 24989696, 7135232)]
+POWER_SOURCES = ('scripts/install-rp6-power.sh', 'sm8650-overlay/usr/lib/konkr/konkr-standby',
+                 'sm8650-overlay/usr/lib/konkr/konkr-sleep')
 
 
 def run(*args, **kwargs):
@@ -87,6 +89,10 @@ def install_power(root):
 def build(base, output, reuse, include_power=False):
     if not sys.platform.startswith('linux') or os.geteuid() != 0:
         raise ValueError('requires Linux/root and file-backed loop mounts')
+    if include_power:
+        for name in POWER_SOURCES:
+            if not (REPO / name).is_file():
+                raise ValueError(f'module2 source missing: {name}')
     base = base.resolve(strict=True); output = output.absolute()
     partial = output.with_name(output.name + '.partial')
     if output.exists(): raise ValueError('output already exists')
@@ -110,10 +116,14 @@ def build(base, output, reuse, include_power=False):
         'scripts/prepare-rp6-beta8-test.py', 'scripts/fix-rp6-paddles.py',
         'scripts/install-inputplumber-sm8550.sh', 'scripts/check-inputplumber-elf.py',
         'scripts/check-rp6-input.sh', 'steamos-overlay/usr/lib/steamos/sm8550-fixpad',
-        'steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf')}
+        'steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf',
+        'steamos-overlay/usr/lib/steamos/rp6-input-config.py',
+        'steamos-overlay/usr/lib/steamos/sm8550-volume-keys',
+        'steamos-overlay/usr/lib/systemd/user/sm8550-volume-keys.service',
+        'sm8550-overlay/etc/inputplumber/devices.d/02-retroid-pocket.yaml',
+        'steamos-overlay/etc/inputplumber/capability_maps.d/retroid_mcu.yaml')}
     if include_power:
-        for name in ('scripts/install-rp6-power.sh', 'sm8650-overlay/usr/lib/konkr/konkr-standby',
-                     'sm8650-overlay/usr/lib/konkr/konkr-sleep'):
+        for name in POWER_SOURCES:
             info['build_source_sha256'][name] = digest(REPO / name)
     with image_mounts(partial) as (boot, root):
         old_bytes = (boot / 'KERNEL').read_bytes()
@@ -142,6 +152,8 @@ def build(base, output, reuse, include_power=False):
                     kernel_sha256=digest(boot / 'KERNEL'), kernel_payload_sha256=hashlib.sha256(again.kernel).hexdigest(),
                     previous_kernel_sha256=hashlib.sha256(old_bytes).hexdigest(), checks='ELF + factory input preflight + chroot version')
         tracked = ['usr/lib/steamos/rp6-input-config.py', 'usr/lib/steamos/sm8550-fixpad',
+                   'usr/lib/steamos/sm8550-volume-keys',
+                   'usr/lib/systemd/user/sm8550-volume-keys.service',
                    'usr/lib/systemd/system/sm8550-fixpad.service',
                    'usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf',
                    'usr/share/konkr-update/konkr-update.py',

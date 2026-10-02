@@ -10,6 +10,12 @@ import sys
 import tempfile
 
 FILES = ('devices.d/02-retroid-pocket.yaml', 'capability_maps.d/retroid_mcu.yaml')
+# Exact defaults shipped before receipts were consistently available (c7a3a2b).
+# Never normalize YAML here: even a comment edit remains a user customization.
+LEGACY_DEFAULTS = {
+    FILES[0]: {'2a6b339445efffb9f676472ed65aa3bf80b147ebe55a31810d5b4cf9a25f9539'},
+    FILES[1]: {'b0eefc986b6b4e4011c137b1eb29ad3a3d7caefdd49f4a10b30262dff1e25e8b'},
+}
 UPPER = 'var/lib/overlays/etc/upper'
 STATE = 'var/lib/rp6-input'
 RECEIPT = STATE + '/managed.json'
@@ -91,7 +97,8 @@ def install(root, source):
                 # An absent upper means the user's lower configuration is active.
                 print(f'preserved customized lower configuration: /{lower}')
                 continue
-        if old is None or old == data or sha(old) == managed.get(rel):
+        old_hash = sha(old) if old is not None else None
+        if old is None or old == data or old_hash == managed.get(rel) or old_hash in LEGACY_DEFAULTS[name]:
             desired[rel] = data
         else:
             print(f'preserved customized configuration: /{rel}')

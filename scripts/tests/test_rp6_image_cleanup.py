@@ -12,6 +12,19 @@ builder = importlib.util.module_from_spec(spec); spec.loader.exec_module(builder
 
 
 class ImageCleanupTests(unittest.TestCase):
+    def test_missing_optional_power_sources_fail_before_copying_or_mounting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(builder, 'REPO', Path(temporary)), \
+                 patch.object(builder.sys, 'platform', 'linux'), \
+                 patch.object(builder.os, 'geteuid', return_value=0), \
+                 patch.object(builder, 'validate_base') as validate, \
+                 patch.object(builder, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'module2 source missing'):
+                    builder.build(Path('/missing/base.img'), Path(temporary) / 'test.img', False, True)
+                validate.assert_not_called()
+                run.assert_not_called()
+                self.assertFalse((Path(temporary) / 'test.img.partial').exists())
+
     def test_failed_unmount_attempts_other_mounts_and_retains_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary) / 'mounts'; folder.mkdir()
