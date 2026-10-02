@@ -1,0 +1,16 @@
+#!/bin/sh
+# Adapted from upstream c0dcada (FearlessSpiff), 2026-10-02.
+# EnvironmentFile is re-read for Steam's ExecStart after this pre-start.
+set -eu
+file=${1:?gamescope environment path}
+timeout=${2:-5}
+case "$timeout" in ''|*[!0-9]*) echo 'invalid gamescope wait timeout' >&2; exit 2;; esac
+ticks=$((timeout * 10))
+while [ ! -s "$file" ] && [ "$ticks" -gt 0 ]; do
+    sleep 0.1
+    ticks=$((ticks - 1))
+done
+if [ ! -s "$file" ]; then
+    echo "gamescope environment not ready after ${timeout}s: $file; check gamescope-session.service" >&2
+    exit 1
+fi

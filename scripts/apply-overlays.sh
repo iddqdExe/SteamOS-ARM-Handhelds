@@ -854,21 +854,15 @@ mkdir -p "$HOME_DST"
 rsync -a --copy-links --exclude '.local/lib/liblsfg-vk.so' "${MOD}/Decky/Plug-ins/" "$HOME_DST/"
 # Decky itself. Upstream left it to a first-boot installer in ARM-Manager
 # that most people never found — no Decky, so no KONKR Control either.
-DECKY_VERSION=v3.2.9
-DECKY_LOADER="${MOD}/Decky/loader/PluginLoader-${DECKY_VERSION}"
-if [[ ! -s "$DECKY_LOADER" ]]; then
-  mkdir -p "${DECKY_LOADER%/*}"
-  curl -fL -o "$DECKY_LOADER.part" \
-    "https://github.com/SteamDeckHomebrew/decky-loader/releases/download/${DECKY_VERSION}/PluginLoader" &&
-    mv "$DECKY_LOADER.part" "$DECKY_LOADER"
-fi
-[[ -s "$DECKY_LOADER" ]] || die "Decky loader ${DECKY_VERSION} missing and download failed"
+# UP-01 / upstream 20dec11: bundled Python dependencies restored in pre1.
+# Verify cached artifacts too; a partial/corrupt cache must never reach HOME.
+DECKY_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$MOD/Decky/loader.json")"
+DECKY_LOADER="$(python3 "$SCRIPT_DIR/fetch-decky-loader.py")" || die "verified Decky loader unavailable"
 mkdir -p "$HOME_DST/homebrew/services" "$HOME_DST/homebrew/settings" "$HOME_DST/homebrew/data" "$HOME_DST/homebrew/logs"
 # ~/.cache must exist (user-owned, see chown below) before anything running
 # as root with HOME=/home/steamos can create it root-owned.
 mkdir -p "$HOME_DST/.cache"
-install -m0755 "$DECKY_LOADER" "$HOME_DST/homebrew/services/PluginLoader"
-printf '%s' "$DECKY_VERSION" >"$HOME_DST/homebrew/services/.loader.version"
+"${SCRIPT_DIR}/install-rp6-session.sh" "$R" "$HOME_DST" "$DECKY_LOADER"
 mkdir -p "$R/usr/lib/systemd/system/multi-user.target.wants"
 ln -sfn ../plugin_loader.service "$R/usr/lib/systemd/system/multi-user.target.wants/plugin_loader.service"
 # Fix lsfg-vk home paths

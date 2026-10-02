@@ -177,6 +177,7 @@ mkdir -p "$rd/root/bin" "$rd/root/dev" "$rd/root/proc" "$rd/root/sys"
 cp /bin/busybox "$rd/root/bin/busybox"
 file -L /bin/busybox | grep -q "statically linked" || { echo "need static busybox" >&2; exit 1; }
 install -m0755 "$kc/initramfs/init" "$rd/root/init"
+install -m0644 "$kc/initramfs/mount-etc-overlay" "$rd/root/mount-etc-overlay"
 install -m0755 "$kc/initramfs/konkr-update-recover" "$rd/root/konkr-update-recover"
 install -m0755 "$kc/initramfs/bootdebug" "$rd/root/bootdebug"
 (cd "$rd/root" && find . | cpio -o -H newc --owner=0:0 2>/dev/null) | gzip -9 -n >"$rd/initrd.gz"

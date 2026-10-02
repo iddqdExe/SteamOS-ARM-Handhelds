@@ -1,7 +1,9 @@
 [Unit]
 Description=SteamDeck Plugin Loader
 After=network-online.target systemd-binfmt.service local-fs.target home.mount
-Wants=systemd-binfmt.service
+# UP-01 / upstream 6799cc4: After alone does not pull in network readiness.
+# Wants remains soft: local plugins can start when an offline wait finishes.
+Wants=network-online.target systemd-binfmt.service
 
 [Service]
 Type=simple

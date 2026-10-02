@@ -346,6 +346,10 @@ build_image() {
   # would ship the old RP6 D-pad/menu/paddle failures again.
   if [[ "$SOC" == sm8550 ]]; then
     "${SCRIPTS}/check-rp6-input.sh" "$R" "${KOUT}/boot/KERNEL"
+    # A cached KOUT may predate UP-01 even when its input DTBs are correct.
+    if [[ -f "$R/usr/lib/steamos/wait-gamescope-env" ]]; then
+      python3 "${SCRIPTS}/check-rp6-session.py" "$R" "${KOUT}/boot/KERNEL"
+    fi
   fi
   command -v sfdisk >/dev/null || die "sfdisk missing"
   command -v mkfs.vfat >/dev/null || die "mkfs.vfat missing"

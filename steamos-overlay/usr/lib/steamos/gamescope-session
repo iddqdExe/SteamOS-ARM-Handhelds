@@ -66,10 +66,12 @@ if [[ "$MANGOAPP" == 1 ]]; then
   export STEAM_MANGOAPP_PRESETS_SUPPORTED=1
   export STEAM_MANGOAPP_HORIZONTAL_SUPPORTED=1
   export STEAM_DISABLE_MANGOAPP_ATOM_WORKAROUND=1
-  MANGOHUD_CONFIGFILE="$(mktemp "$XDG_RUNTIME_DIR/mangohud.XXXXXXXX")"
+  # Adapted from upstream c0dcada (FearlessSpiff), 2026-10-02: preserve
+  # Steam's last preset when Game Mode restarts within this login.
+  MANGOHUD_CONFIGFILE="$XDG_RUNTIME_DIR/mangohud-config"
   export MANGOHUD_CONFIGFILE
   # Steam writes presets into this file; start hidden.
-  echo "no_display" >"$MANGOHUD_CONFIGFILE"
+  [[ -s "$MANGOHUD_CONFIGFILE" ]] || echo "no_display" >"$MANGOHUD_CONFIGFILE"
 else
   export GAMESCOPE_MANGOAPP_SOCKET_DISABLE=1
 fi
@@ -328,7 +330,8 @@ fi
 # slider (only 144/n frame limits) and no STEAM_USE_MANGOAPP. Hand the Steam
 # session vars over through a file steam.service reads at start.
 env | grep -E '^(STEAM_DISPLAY_REFRESH_LIMITS|STEAM_USE_MANGOAPP|STEAM_MANGOAPP_[A-Z_]+|STEAM_DISABLE_MANGOAPP_ATOM_WORKAROUND|GAMESCOPE_MANGOAPP_SOCKET_DISABLE|MANGOHUD_CONFIGFILE)=' \
-  >"$XDG_RUNTIME_DIR/gamescope-steam.env" 2>/dev/null || true
+  >"$XDG_RUNTIME_DIR/gamescope-steam.env.tmp.$$"
+mv -f "$XDG_RUNTIME_DIR/gamescope-steam.env.tmp.$$" "$XDG_RUNTIME_DIR/gamescope-steam.env"
 
 echo >&2 "gamescope-session: output=$OUTPUT panel=${PANEL_W}x${PANEL_H} nested=${W}x${H}@${REFRESH_HZ} max=${MAX_HZ} mangoapp=${MANGOAPP} kms_rotation=${KMS_ROTATION} ignore_touch=${GAMESCOPE_IGNORE_TOUCH:-} bottom=${GAMESCOPE_LEASE_CONNECTOR:-none} orientation=${PANEL_ORIENT:-auto}"
 

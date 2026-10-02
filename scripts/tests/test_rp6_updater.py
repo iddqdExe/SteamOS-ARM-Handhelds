@@ -84,6 +84,28 @@ class UpdaterTests(unittest.TestCase):
         self.assertFalse((self.root / 'var/lib/rp6-input').exists())
         self.assertEqual(custom.read_text(), 'legacy customization\n')
 
+    def test_decky_loader_upgrade_and_rollback_preserve_plugin_settings(self):
+        old = self.put(self.home, 'steamos/homebrew/services/PluginLoader', 'old loader')
+        settings = self.put(self.home, 'steamos/homebrew/settings/konkr-control.json', 'custom settings')
+        self.put(self.payload, 'home/steamos/homebrew/services/PluginLoader', 'new loader')
+        self.manifest['files']['home/steamos/homebrew/services/PluginLoader'] = hashlib.sha256(b'new loader').hexdigest()
+        updater.snapshot(self.root, self.home, self.work)
+        updater.apply(self.root, self.boot, self.home, self.work, self.manifest)
+        self.assertEqual(old.read_text(), 'new loader')
+        self.assertEqual(settings.read_text(), 'custom settings')
+        updater.restore(self.root, self.boot, self.home, self.work)
+        self.assertEqual(old.read_text(), 'old loader')
+        self.assertEqual(settings.read_text(), 'custom settings')
+
+    def test_restore_older_snapshot_without_decky_service_receipt(self):
+        loader = self.put(self.home, 'steamos/homebrew/services/PluginLoader', 'untouched loader')
+        updater.snapshot(self.root, self.home, self.work)
+        receipt = self.work / 'backup/home-presence.json'
+        previous = json.loads(receipt.read_text()); previous.pop('homebrew/services', None)
+        receipt.write_text(json.dumps(previous))
+        updater.restore(self.root, self.boot, self.home, self.work)
+        self.assertEqual(loader.read_text(), 'untouched loader')
+
     def test_bootstrap_replaces_the_old_updater_before_the_first_upgrade(self):
         custom = self.put(self.root, MAP, 'legacy assignments\n')
         path = self.put(self.root, 'usr/share/konkr-update/konkr-update.py', '# old deployed updater\n')

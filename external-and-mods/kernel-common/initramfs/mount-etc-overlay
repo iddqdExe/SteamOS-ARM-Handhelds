@@ -1,0 +1,14 @@
+# GPL-2.0; adapted from hashtagbasit/f08eaa6, 2026-10-02.
+# Source before switch_root, after any pending update has been recovered.
+mount_etc_overlay() {
+    local root=${1:-/newroot} mounts=${2:-/proc/mounts} overlay
+    overlay=$root/var/lib/overlays/etc
+    [ -d "$overlay" ] || return 0
+    grep -Fq " $root/etc " "$mounts" && return 0
+    if ! mkdir -p "$overlay/upper" "$overlay/work" ||
+       ! mount -t overlay overlay \
+         -o "lowerdir=$root/etc,upperdir=$overlay/upper,workdir=$overlay/work" "$root/etc"; then
+        echo '/etc overlay failed before systemd; boot stopped to preserve enabled units and settings' >&2
+        return 1
+    fi
+}

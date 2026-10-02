@@ -259,6 +259,7 @@ build_initramfs() {
   rm -rf "$d"; mkdir -p "$d/root/bin" "$d/root/dev" "$d/root/proc" "$d/root/sys"
   cp "$bb" "$d/root/bin/busybox"
   install -m0755 "${HERE}/initramfs/init" "$d/root/init"
+  install -m0644 "${HERE}/initramfs/mount-etc-overlay" "$d/root/mount-etc-overlay"
   install -m0755 "${HERE}/initramfs/konkr-update-recover" "$d/root/konkr-update-recover"
   install -m0755 "${HERE}/initramfs/bootdebug" "$d/root/bootdebug"
   (cd "$d/root" && find . | cpio -o -H newc --owner=0:0 2>/dev/null) >"$d/initrd.cpio"

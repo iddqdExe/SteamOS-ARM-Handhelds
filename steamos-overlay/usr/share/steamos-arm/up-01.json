@@ -1,0 +1,24 @@
+{
+  "module": "UP-01",
+  "target": {"model": "Retroid Pocket 6", "soc": "SM8550", "ram_gib": 12, "media": "microSD"},
+  "local_base_sha": "fa389fb28dc624418e3f3436e20a81c6bb87c88a",
+  "donor": {
+    "url": "https://github.com/hashtagbasit/SteamOS-ARM-Handhelds",
+    "sha": "682281c0d82319324fd3f7d09b34d0f7005148fc",
+    "release": "v1.3-beta10",
+    "license": "GPL-2.0",
+    "authors": ["hashtagbasit", "FearlessSpiff"],
+    "commits": [
+      "c9d87d6492932b73e88fbf53edb9119e5163d137",
+      "4181b9cfa42a68694595b7be2ba68414d0a35e23",
+      "4a12b47208b8576a54f8191b8abc31290ec89921",
+      "c0dcada7d40c7ff1dca2a09634b1ae2d73d671a9",
+      "f08eaa6d28949690f9c0ed1b835b2cdb33ee9f6f",
+      "20dec11ad5e49754b7a27854d043205303350677",
+      "6799cc45307dda4a65a777a890b6a2de44356663"
+    ]
+  },
+  "decky": {"version": "v3.2.10-pre1", "sha256": "5955cadfdafc5d8a4176c6f7c7b3c7442e701f5b4f6d536e47a84705fe28c8c7"},
+  "device_validation": "untested",
+  "release_decision": "test-candidate"
+}

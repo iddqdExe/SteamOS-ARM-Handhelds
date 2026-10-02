@@ -32,7 +32,8 @@ ROOT_DIRS = ('usr', 'opt', 'etc')
 UPPER = 'var/lib/overlays/etc/upper'
 INPUT_STATE = 'var/lib/rp6-input'
 SNAPSHOT_DIRS = (*ROOT_DIRS, UPPER, INPUT_STATE)
-HOME_DIRS = ('homebrew/plugins/konkr-control', 'homebrew/plugins/decky-lsfg-vk')
+HOME_DIRS = ('homebrew/plugins/konkr-control', 'homebrew/plugins/decky-lsfg-vk',
+             'homebrew/services')  # UP-01: loader and version move/rollback together.
 PRESERVE = ('passwd', 'shadow', 'group', 'gshadow', 'machine-id', 'hostname', 'hosts',
             'fstab', 'crypttab', 'localtime', 'adjtime', 'resolv.conf', 'ssh',
             'NetworkManager/system-connections', 'sudoers.d', 'inputplumber')
@@ -296,6 +297,7 @@ def restore(root, boot, home, work):
     present = json.loads((backup / 'home-presence.json').read_text())
     for rel in HOME_DIRS:
         dest = home / 'steamos' / rel
+        if rel not in present: continue  # Snapshots made before UP-01 have no loader receipt.
         if present[rel]: copy_tree(backup / 'home/steamos' / rel, dest, delete=True)
         elif dest.exists(): shutil.rmtree(dest)
     layers = home / 'steamos/.local/share/vulkan/implicit_layer.d'
@@ -319,6 +321,7 @@ def apply(root, boot, home, work, manifest):
         run(sys.executable, root / 'usr/lib/steamos/rp6-input-config.py', root)
     for rel in HOME_DIRS:
         src = payload / 'home/steamos' / rel
+        if rel == 'homebrew/services' and not src.is_dir(): continue  # Older packages retain the installed loader.
         if not src.is_dir(): raise ValueError(f'missing home migration: {rel}')
         copy_tree(src, home / 'steamos' / rel, delete=True)
         # Images stage users with numeric ownership; do not inherit root ownership.

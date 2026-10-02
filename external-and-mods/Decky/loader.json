@@ -1,0 +1,12 @@
+{
+  "version": "v3.2.10-pre1",
+  "url": "https://github.com/SteamDeckHomebrew/decky-loader/releases/download/v3.2.10-pre1/PluginLoader",
+  "sha256": "5955cadfdafc5d8a4176c6f7c7b3c7442e701f5b4f6d536e47a84705fe28c8c7",
+  "architecture": "x86_64",
+  "asset_id": 589870065,
+  "license": "GPL-2.0",
+  "source": "https://github.com/SteamDeckHomebrew/decky-loader/tree/v3.2.10-pre1",
+  "donor_commit": "20dec11ad5e49754b7a27854d043205303350677",
+  "source_commit": "75563316f9119ee7e36be7f43885be65e877fad0",
+  "source_tag_sha": "a48a8983b18c5047b61fae9b16d104fe5c9f3f7e"
+}

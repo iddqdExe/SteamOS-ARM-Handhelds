@@ -16,12 +16,20 @@ _updater = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_upd
 ap = argparse.ArgumentParser()
 ap.add_argument('--rootfs', required=True)
 ap.add_argument('--kernel', required=True)
+ap.add_argument('--home', help='staged steamos HOME when mounted separately from rootfs')
 ap.add_argument('--soc', default='sm8650', choices=sorted(_updater.SOC_MODELS))
+ap.add_argument('--device', action='append', help='restrict the package to named models within --soc')
 ap.add_argument('--version', required=True)
 ap.add_argument('--output', required=True)
 a = ap.parse_args()
 root = Path(a.rootfs).resolve(); output = Path(a.output).resolve()
+home = Path(a.home).resolve() if a.home else root / 'home/steamos'
+devices = a.device or _updater.SOC_MODELS[a.soc]
+if any(device not in _updater.SOC_MODELS[a.soc] for device in devices): raise SystemExit('device does not belong to selected SoC')
+if output.exists() or output.with_name(output.name + '.part').exists(): raise SystemExit('output already exists')
 if not (root / 'usr/lib/liblsfg-vk-layer-arm64.so').is_file(): raise SystemExit('missing LSFG v2 ARM layer')
+if (root / 'usr/lib/steamos/wait-gamescope-env').is_file():
+    subprocess.run(['python3', str(Path(__file__).with_name('check-rp6-session.py')), str(root), a.kernel, '--home', str(home)], check=True)
 with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=output.parent) as temp:
     stage = Path(temp)
     def copy(src, dst):
@@ -36,7 +44,9 @@ with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=output.parent) as 
         src = root / rel
         if src.exists(): copy(src, stage / 'root' / rel)
     for name in ('konkr-control', 'decky-lsfg-vk'):
-        copy(root / 'home/steamos/homebrew/plugins' / name, stage / 'home/steamos/homebrew/plugins' / name)
+        copy(home / 'homebrew/plugins' / name, stage / 'home/steamos/homebrew/plugins' / name)
+    services = home / 'homebrew/services'
+    if services.is_dir(): copy(services, stage / 'home/steamos/homebrew/services')
     (stage / 'boot').mkdir()
     subprocess.run(['cp', a.kernel, str(stage / 'boot/KERNEL')], check=True)
     files = {}
@@ -46,8 +56,10 @@ with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=output.parent) as 
         with p.open('rb') as f:
             for b in iter(lambda: f.read(4 << 20), b''): h.update(b)
         files[str(p.relative_to(stage))] = h.hexdigest()
-    (stage / 'manifest.json').write_text(json.dumps({'format': 1, 'architecture': 'aarch64',
-        'devices': _updater.SOC_MODELS[a.soc], 'version': a.version, 'files': files}, indent=2))
+    manifest = {'format': 1, 'architecture': 'aarch64', 'devices': devices, 'version': a.version, 'files': files}
+    provenance = root / 'usr/share/steamos-arm/up-01.json'
+    if provenance.is_file(): manifest['provenance'] = json.loads(provenance.read_text())
+    (stage / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     subprocess.run(['tar', '--xattrs', '--acls', '--numeric-owner', '-czf', str(output) + '.part',
                     '-C', str(stage), 'manifest.json', 'root', 'home', 'boot'], check=True)
     os.replace(str(output) + '.part', output)
