@@ -147,7 +147,7 @@ if [ -n "$rootdev" ] && mount -t ext4 -o rw "$rootdev" /newroot; then
   fi
   # UP-01: systemd must see persistent /etc on its very first unit scan.
   # Recovery precedes this mount so rollback restores the correct upper.
-  if ! ( . /mount-etc-overlay && mount_etc_overlay /newroot ); then
+  if ! ( . /mount-etc-overlay && mount_etc_overlay_logged /newroot "$logdir/early-etc.log" ); then
     snap "ETC OVERLAY FAILED"
     exec sh
   fi

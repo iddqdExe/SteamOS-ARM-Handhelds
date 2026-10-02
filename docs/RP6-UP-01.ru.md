@@ -66,13 +66,13 @@ python3 scripts/prepare-rp6-session-test.py BASE.img UP01.img \
 
 ## Проверки и открытая приёмка
 
-- ARM64 Linux: 76 тестов, без пропусков; реальные сценарии Xvfb проверяют восстановление игры,
+- ARM64 Linux: 80 тестов, без пропусков; реальные сценарии Xvfb проверяют восстановление игры,
   исключение Steam и ограничение частоты. Проверены upgrade/rollback loader, пользовательские maps/settings,
   malformed/missing cache, отсутствующий env, повторный вход, SHA/boot ID и отказ embedded repack.
   Реальный security.capability проходит tar extraction → upgrade → rollback.
 - Реальный overlay mount в отдельном Linux mount namespace: enabled test unit появляется до systemd,
   повторный вызов не перемонтирует `/etc`, upper сохраняется после unmount.
-- macOS: 76 тестов, 9 Linux/Xvfb/root сценариев пропущены; это не заменяет Linux прогон.
+- macOS: 80 тестов, 9 Linux/Xvfb/root сценариев пропущены; это не заменяет Linux прогон.
 - Проверены shell syntax и отсутствие whitespace ошибок. Workflow `rp6-session.yml` добавлен;
   удалённый GitHub Actions запуск не выполнялся.
 - На RP6 ещё нужны cold boot/reboot, enabled test service после reboot/update, Game Mode/Desktop,
@@ -81,6 +81,17 @@ python3 scripts/prepare-rp6-session-test.py BASE.img UP01.img \
 
 UP-01 пока **кандидат для аппаратной проверки**, checkbox приёмки исходного плана не отмечены.
 Decky prerelease остаётся явно закреплённым тестовым компонентом.
+
+Первая загрузка кандидата на RP6 остановилась на `ETC OVERLAY FAILED` до systemd.
+Проверка фактического импортированного ядра выявила `CONFIG_OVERLAY_FS=m`, хотя
+фрагмент нашей новой source-сборки задаёт `y`. В минимальном initramfs отсутствует
+`/sbin/modprobe`, поэтому автоматическая загрузка модуля до `switch_root` не работает.
+Helper теперь при отсутствии OverlayFS в `/proc/filesystems` вызывает `modprobe`
+через `chroot` в смонтированный rootfs с соответствующими модулями ядра.
+`early-etc.log` сохраняет диагностику; недоступный лог не блокирует корректный mount.
+Проверены регрессии модульного/builtin OverlayFS, отказ загрузчика и недоступный лог,
+реальный BusyBox из BOOT и dry-run kmod в rootfs образа без `/proc` и `/sys`.
+Это исправление требует повторной аппаратной загрузки; исходный кандидат не принят.
 
 ## Откат
 
