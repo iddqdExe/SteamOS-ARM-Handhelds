@@ -150,6 +150,21 @@ class EarlyEtcTests(unittest.TestCase):
 
 
 class SessionDeliveryTests(unittest.TestCase):
+    def test_staged_delivery_replaces_stale_standby_with_executable_current_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            standby = root / 'usr/lib/konkr/konkr-standby'
+            standby.parent.mkdir(parents=True)
+            standby.write_text('stale standby payload\n')
+            standby.chmod(0o644)
+            for _ in range(2):
+                result = subprocess.run(['bash', str(REPO / 'scripts/install-rp6-session.sh'), str(root)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(standby.read_bytes(),
+                                 (REPO / 'sm8650-overlay/usr/lib/konkr/konkr-standby').read_bytes())
+                self.assertEqual(standby.stat().st_mode & 0o777, 0o755)
+
     def test_staged_delivery_is_idempotent_and_preserves_other_vulkan_layers(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

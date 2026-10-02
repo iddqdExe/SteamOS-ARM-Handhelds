@@ -35,6 +35,7 @@ for rel in usr/lib/systemd/system/plugin_loader.service usr/lib/systemd/user/kon
 done
 mkdir -p "$root/usr/lib/konkr"
 install -m0755 "$repo/sm8650-overlay/usr/lib/konkr/konkr-focusfix" "$root/usr/lib/konkr/konkr-focusfix"
+install -m0755 "$repo/sm8650-overlay/usr/lib/konkr/konkr-standby" "$root/usr/lib/konkr/konkr-standby"
 mkdir -p "$root/usr/lib/systemd/user/gamescope-session.target.wants"
 ln -sfn ../konkr-focusfix.service "$root/usr/lib/systemd/user/gamescope-session.target.wants/konkr-focusfix.service"
 mkdir -p "$root/usr/share/konkr-update"

@@ -28,12 +28,14 @@ def check(root, kernel, home=None):
         'usr/lib/systemd/system/plugin_loader.service': 'sm8650-overlay',
         'usr/lib/systemd/user/konkr-focusfix.service': 'sm8650-overlay',
         'usr/lib/konkr/konkr-focusfix': 'sm8650-overlay',
+        'usr/lib/konkr/konkr-standby': 'sm8650-overlay',
     }
     for rel, source in files.items():
         installed = root / rel
         if not installed.is_file(): raise ValueError(f'missing UP-01 session file: {rel}')
         if installed.read_bytes() != (REPO / source / rel).read_bytes(): raise ValueError(f'UP-01 staged content differs: {rel}')
-        if rel in ('usr/lib/steamos/gamescope-session', 'usr/lib/steamos/wait-gamescope-env', 'usr/lib/konkr/konkr-focusfix') and not installed.stat().st_mode & 0o111:
+        if rel in ('usr/lib/steamos/gamescope-session', 'usr/lib/steamos/wait-gamescope-env',
+                   'usr/lib/konkr/konkr-focusfix', 'usr/lib/konkr/konkr-standby') and not installed.stat().st_mode & 0o111:
             raise ValueError(f'UP-01 file is not executable: {rel}')
     header = (root / 'usr/lib/konkr/konkr-focusfix').read_bytes()[:20]
     if header[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', header, 18)[0] != 183:
@@ -75,7 +77,8 @@ def check(root, kernel, home=None):
         expected = (REPO / 'external-and-mods/kernel-common/initramfs' / name).read_bytes()
         if entries.get(name) != expected: raise ValueError(f'BOOT lacks matching UP-01 {name}; rebuild/repack the real initramfs')
     return {'module': 'UP-01', 'kernel_release': release[1].decode(), 'decky_version': decky['version'],
-            'session_delivery': 'passed', 'boot_initramfs_delivery': 'passed', 'device': 'untested'}
+            'session_delivery': 'passed', 'standby_delivery': 'passed',
+            'boot_initramfs_delivery': 'passed', 'device': 'untested'}
 
 
 def main():

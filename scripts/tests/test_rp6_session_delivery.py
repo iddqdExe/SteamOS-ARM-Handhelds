@@ -26,6 +26,26 @@ class CandidateSafetyTests(unittest.TestCase):
             (root / 'usr/lib/systemd/user/konkr-focusfix.service').unlink()
             self.assertIn('missing UP-01 session file: usr/lib/systemd/user/konkr-focusfix.service', self.check_root(root).stderr)
 
+    def test_preflight_rejects_missing_stale_and_nonexecutable_standby(self):
+        cases = [('missing', 'missing UP-01 session file'),
+                 ('stale', 'UP-01 staged content differs'),
+                 ('not_executable', 'UP-01 file is not executable')]
+        for case, message in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                root = self.staged_root(Path(tmp))
+                standby = root / 'usr/lib/konkr/konkr-standby'
+                standby.write_bytes((REPO / 'sm8650-overlay/usr/lib/konkr/konkr-standby').read_bytes())
+                standby.chmod(0o755)
+                if case == 'missing':
+                    standby.unlink()
+                elif case == 'stale':
+                    standby.write_text('stale standby payload\n')
+                else:
+                    standby.chmod(0o644)
+                result = self.check_root(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message + ': usr/lib/konkr/konkr-standby', result.stderr)
+
     def test_focusfix_enable_link_is_required_for_delivery(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self.staged_root(Path(tmp))
