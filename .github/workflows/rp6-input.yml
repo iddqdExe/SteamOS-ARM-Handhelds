@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/**'
       - 'make-steamos-sm8650.sh'
+      - 'external-and-mods/kernel-sm8550/dts/**'
       - 'steamos-overlay/etc/inputplumber/**'
       - 'sm8550-overlay/etc/inputplumber/**'
       - 'steamos-overlay/usr/lib/steamos/rp6-input-config.py'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'scripts/**'
       - 'make-steamos-sm8650.sh'
+      - 'external-and-mods/kernel-sm8550/dts/**'
       - 'steamos-overlay/etc/inputplumber/**'
       - 'sm8550-overlay/etc/inputplumber/**'
       - 'steamos-overlay/usr/lib/steamos/rp6-input-config.py'

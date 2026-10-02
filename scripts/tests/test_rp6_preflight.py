@@ -1,11 +1,11 @@
 """Ensure packaging cannot accept stale RP6 input files or a broken boot DTB."""
-import struct
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from test_rp6_paddles import dtb, IMAGE, TOOL
+from test_rp6_touch import boot as boot_image, BUS, TOUCH
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -28,11 +28,7 @@ class PreflightTests(unittest.TestCase):
                            check=True, capture_output=True)
 
             def write_boot(payload):
-                header = bytearray(2048)
-                header[:8] = b'ANDROID!'
-                struct.pack_into('<I', header, 8, len(payload))
-                struct.pack_into('<I', header, 36, 2048)
-                boot.write_bytes(bytes(header) + payload)
+                boot.write_bytes(boot_image(payload))
 
             def check():
                 return subprocess.run(['bash', str(REPO / 'scripts/check-rp6-input.sh'),
@@ -41,6 +37,14 @@ class PreflightTests(unittest.TestCase):
             write_boot(fixed.read_bytes())
             result = check()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            tree = Path(tmp) / 'tree.dtb'
+            for args in (['-t', 'i', str(tree), BUS, 'clock-frequency', '100000'],
+                         [str(tree), TOUCH, 'no-regmap-bulk-read']):
+                tree.write_bytes(fixed.read_bytes()[len(IMAGE):])
+                subprocess.run(['fdtput', *args], check=True)
+                write_boot(IMAGE + tree.read_bytes())
+                self.assertNotEqual(check().returncode, 0, 'touch regression accepted by input preflight')
+            write_boot(fixed.read_bytes())
             gdbus.chmod(0o644)
             self.assertNotEqual(check().returncode, 0, 'missing volume signal runtime was accepted')
             gdbus.chmod(0o755)

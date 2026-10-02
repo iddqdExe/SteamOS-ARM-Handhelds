@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Derive a local RP6 test image from the exact verified, repaired beta8 base.
 
-Includes module1 input fixes; --include-power adds the module2 standby pair.
+Includes module1 input and UP-02 touch fixes; --include-power adds module2.
 
 Linux/root only. Uses loop devices for regular image files; no card writes.
 This preserves beta8 userspace and is not a clean source distro build.
@@ -86,6 +86,23 @@ def install_power(root):
     return ['usr/lib/konkr/konkr-standby', 'usr/lib/konkr/konkr-sleep']
 
 
+def prepare_kernel(data):
+    """Deliver touch and existing input fixes together, preserving boot data."""
+    touch = load('rp6_image_touch', REPO / 'scripts/fix-rp6-touch.py')
+    old = touch.read_boot(data)
+    if old.build(old.cmdline) != data:
+        raise ValueError('unsupported noncanonical base KERNEL')
+    old.kernel, count = touch.paddles.process(old.kernel)
+    if count != 2:
+        raise ValueError('expected two RP6 trees')
+    old.kernel_size = len(old.kernel)
+    intermediate = old.build(old.cmdline)
+    kernel, touch_count = touch.repack(intermediate, hashlib.sha256(intermediate).hexdigest())
+    if touch_count != 2:
+        raise ValueError('expected two RP6 touch trees')
+    return kernel
+
+
 def build(base, output, reuse, include_power=False):
     if not sys.platform.startswith('linux') or os.geteuid() != 0:
         raise ValueError('requires Linux/root and file-backed loop mounts')
@@ -106,7 +123,6 @@ def build(base, output, reuse, include_power=False):
         output.parent.mkdir(parents=True, exist_ok=True)
         run('cp', '--reflink=auto', '--sparse=always', '--', base, partial)
     bootimg = load('bootimg', REPO / 'external-and-mods/ufs-install/ufs-bootimg.py')
-    paddles = load('paddles', REPO / 'scripts/fix-rp6-paddles.py')
     info = {'kind': 'local-module2-test' if include_power else 'local-module1-test', 'hardware_accepted': False, 'base_sha256': BASE_SHA,
             'created_utc': datetime.now(timezone.utc).isoformat(), 'partitions': LAYOUT,
             'git_revision': run('git', '-c', f'safe.directory={REPO}', '-C', REPO, 'rev-parse', 'HEAD', capture_output=True, text=True).stdout.strip(),
@@ -114,6 +130,7 @@ def build(base, output, reuse, include_power=False):
             'scope': 'RP6 12GB SM8550 microSD; beta8 userspace retained'}
     info['build_source_sha256'] = {name: digest(REPO / name) for name in (
         'scripts/prepare-rp6-beta8-test.py', 'scripts/fix-rp6-paddles.py',
+        'scripts/fix-rp6-touch.py',
         'scripts/install-inputplumber-sm8550.sh', 'scripts/check-inputplumber-elf.py',
         'scripts/check-rp6-input.sh', 'steamos-overlay/usr/lib/steamos/sm8550-fixpad',
         'steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf',
@@ -128,13 +145,7 @@ def build(base, output, reuse, include_power=False):
     with image_mounts(partial) as (boot, root):
         old_bytes = (boot / 'KERNEL').read_bytes()
         old = bootimg.BootImg(old_bytes)
-        if old.id != old.expected_id(): raise ValueError('base KERNEL checksum mismatch')
-        prefix, trees = paddles.split_payload(old.kernel)
-        patched = [paddles.fix_tree(tree, False) for tree in trees]
-        if sum(is_rp6 for _, is_rp6 in patched) != 2: raise ValueError('expected two RP6 trees')
-        old.kernel = prefix + b''.join(tree for tree, _ in patched)
-        old.kernel_size = len(old.kernel)
-        kernel = old.build(old.cmdline)
+        kernel = prepare_kernel(old_bytes)
         again = bootimg.BootImg(kernel)
         if again.ramdisk != old.ramdisk or again.cmdline != old.cmdline or again.id != again.expected_id():
             raise ValueError('rebuilt KERNEL integrity mismatch')
@@ -149,6 +160,7 @@ def build(base, output, reuse, include_power=False):
         run('bash', REPO / 'scripts/check-rp6-input.sh', root, boot / 'KERNEL')
         version = run('chroot', root, '/usr/bin/inputplumber', '--version', capture_output=True, text=True).stdout.strip()
         info.update(inputplumber=version, inputplumber_sha256=digest(root / 'usr/bin/inputplumber'),
+                    up02_touch='400 kHz I2C + bulk reads; hardware untested',
                     kernel_sha256=digest(boot / 'KERNEL'), kernel_payload_sha256=hashlib.sha256(again.kernel).hexdigest(),
                     previous_kernel_sha256=hashlib.sha256(old_bytes).hexdigest(), checks='ELF + factory input preflight + chroot version')
         tracked = ['usr/lib/steamos/rp6-input-config.py', 'usr/lib/steamos/sm8550-fixpad',

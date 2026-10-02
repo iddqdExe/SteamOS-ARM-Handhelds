@@ -20,3 +20,17 @@
 		vdd28-supply = <&vdd_disp_2v8>;
 	};
 };
+
+/*
+ * UP-02: Diogo Trindade, ROCKNIX
+ * 3829f7c5a80a8a9e78576ea5a3bb0c1ceeebb939; SteamOS ARM adaptation
+ * 3b01fcc60759b590a064387379b6858c2cbbb3cd. This controls touch I/O,
+ * not panel refresh. RP6 event rate still requires hardware measurement.
+ */
+&i2c_hub_3 {
+	clock-frequency = <400000>;
+
+	touchscreen@38 {
+		/delete-property/ no-regmap-bulk-read;
+	};
+};

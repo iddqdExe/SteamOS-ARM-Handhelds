@@ -14,7 +14,12 @@ IMAGE = gzip.compress(b'unchanged kernel and embedded initramfs', mtime=0)
 def dtb(model='Retroid Pocket 6'):
     source = f'''/dts-v1/;
     / {{ model = "{model}";
-        soc@0 {{ pinctrl@f100000 {{ compatible = "qcom,sm8550-tlmm";
+        soc@0 {{ geniqup@9c0000 {{ i2c@98c000 {{
+            compatible = "qcom,geni-i2c-master-hub"; clock-frequency = <400000>;
+            touchscreen@38 {{ compatible = "focaltech,ft5426"; reg = <0x38>;
+                touchscreen-inverted-y;
+            }};
+        }}; }}; pinctrl@f100000 {{ compatible = "qcom,sm8550-tlmm";
             phandle = <7>;
             volume-up-state {{ phandle = <8>; pins = "gpio6"; }};
         }}; }};

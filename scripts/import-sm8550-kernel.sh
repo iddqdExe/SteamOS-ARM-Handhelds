@@ -87,7 +87,7 @@ if [[ -L "$s/ayaneo" ]]; then
 fi
 for d in odin2mini odin2portal; do [[ -L "$s/ayn/$d" ]] && rm "$s/ayn/$d"; done
 
-# Boot file: the kernel section (Image.gz + their appended DTBs) untouched,
+# Boot file: Image.gz preserved, with targeted DTB fixups below,
 # with OUR busybox initramfs (bootlog.txt, debug file, update recovery) as the
 # ramdisk at the beta 2 addresses. A tester's hybrid with exactly this layout
 # reached switch_root on an Odin 2; the image's own Debian initramfs is kept aside.
@@ -172,6 +172,9 @@ PY
 # verified GPIO57/58 fix before repacking; preserve Image.gz and other DTBs.
 python3 "$repo/scripts/fix-rp6-paddles.py" "$work/kernel.bin" "$work/kernel-paddles.bin"
 mv "$work/kernel-paddles.bin" "$work/kernel.bin"
+# UP-02: only RP6's ft5426 bus/read mode; preserve orientation and input.
+python3 "$repo/scripts/fix-rp6-touch.py" "$work/kernel.bin" "$work/kernel-touch.bin"
+mv "$work/kernel-touch.bin" "$work/kernel.bin"
 rd="$work/initramfs"
 mkdir -p "$rd/root/bin" "$rd/root/dev" "$rd/root/proc" "$rd/root/sys"
 cp /bin/busybox "$rd/root/bin/busybox"
@@ -185,6 +188,7 @@ python3 "$kc/mkbootimg-v0.py" --kernel "$work/kernel.bin" --ramdisk "$rd/initrd.
   --kernel-addr 0x10008000 --ramdisk-addr 0x16000000 --tags-addr 0x10000100 \
   --cmdline "root=PARTUUID=00000000-02" --out "$out/boot/KERNEL"
 (cd "$out/boot" && md5sum KERNEL >KERNEL.md5)
+python3 "$repo/scripts/fix-rp6-touch.py" --check-boot "$out/boot/KERNEL"
 # Extra modules this kernel lacks, built against a vanilla tree of the same
 # release with its own config (no MODVERSIONS/signing, so vermagic is all it
 # checks): sgm3804 powers the Pocket DMG / ACE panel (ROCKNIX's driver).

@@ -28,4 +28,5 @@ if [[ -d "$R/var/lib/overlays/etc/upper" ]]; then
   check_file "$MAP" "$R/var/lib/overlays/etc/upper/inputplumber/capability_maps.d/retroid_mcu.yaml"
 fi
 python3 "$ROOT/scripts/fix-rp6-paddles.py" --check-boot "$KERNEL"
+python3 "$ROOT/scripts/fix-rp6-touch.py" --check-boot "$KERNEL"
 echo 'PASS: RP6 input profile, axis calibration and D-pad/menu/paddle map match the build sources'

@@ -36,7 +36,10 @@ def properties(data):
         if token == 1:
             end = data.index(0, pos, end_struct)
             stack.append(data[pos:end].decode())
-            result['/'.join(stack) or '/'] = {}
+            path = '/'.join(stack) or '/'
+            if path in result:
+                raise ValueError('duplicate FDT node: ' + path)
+            result[path] = {}
             pos = (end + 4) & ~3
         elif token == 2:
             stack.pop()
@@ -47,7 +50,10 @@ def properties(data):
                 raise ValueError('invalid FDT property bounds')
             end = data.index(0, strings + offset, end_strings)
             name = data[strings + offset:end].decode()
-            result['/'.join(stack) or '/'][name] = data[pos:pos + length]
+            values = result['/'.join(stack) or '/']
+            if name in values:
+                raise ValueError('duplicate FDT property: ' + name)
+            values[name] = data[pos:pos + length]
             pos = (pos + length + 3) & ~3
         elif token == 4:
             continue
