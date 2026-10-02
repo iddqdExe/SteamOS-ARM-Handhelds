@@ -9,6 +9,17 @@ name: Retroid MCU Mapping
 id: retroid_mcu
 
 mapping:
+  # Volume Up shares the grabbed gpio-keys source with L4/R4. Emit it over
+  # DBus for sm8550-volume-keys, including when no keyboard target exists.
+  - name: Volume Up
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEUP
+          value_type: button
+    target_event:
+      dbus: ui_volume_up
+
   - name: Guide Button
     source_events:
       - evdev:

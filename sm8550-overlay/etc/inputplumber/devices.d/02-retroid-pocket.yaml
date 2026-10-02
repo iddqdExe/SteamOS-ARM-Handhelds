@@ -3,8 +3,8 @@
 # Same RSInput serial pad as the AYN Odin 2 (qcs8550-ayn-common.dtsi), but
 # the face buttons come in the other way round, so it has its own
 # retroid_mcu map. The two back paddles are gpio-keys (BTN_Z / BTN_C,
-# next to Volume Up) → L4 / R4. Unmapped keys (volume) pass through to the
-# keyboard target.
+# next to Volume Up) → L4 / R4. Volume Up uses the DBus volume handler,
+# independently of the keyboard target.
 version: 1
 kind: CompositeDevice
 name: Retroid Pocket

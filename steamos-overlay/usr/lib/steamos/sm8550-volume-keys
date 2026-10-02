@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Odin2 volume rocker: gpio-keys = VOLUP, pmic_resin = VOLDOWN → wpctl.
+"""SM8550 volume rocker: native keys and InputPlumber volume signals → pactl.
 
+RP6 Volume Up shares gpio-keys with the paddles, so InputPlumber owns it.
 Do not grab USB/Bluetooth keyboards, mice, or the gamepad.
 """
 from __future__ import annotations
@@ -9,6 +10,7 @@ import array
 import fcntl
 import glob
 import os
+import re
 import select
 import struct
 import subprocess
@@ -23,6 +25,11 @@ KEY_VOLUMEUP = 115
 STEP = os.environ.get("SM8550_VOLUME_STEP", "5%")
 LIMIT = os.environ.get("SM8550_VOLUME_LIMIT", "1.0")
 ALLOW = ("gpio-keys", "pmic_resin")
+DBUS_VOLUME = re.compile(
+    r"^/org/shadowblip/InputPlumber/devices/target/dbus\d+: "
+    r"org\.shadowblip\.Input\.DBusDevice\.InputEvent "
+    r"\('(?P<event>ui_volume_up|ui_volume_down|ui_volume_mute)', (?P<value>[-+\d.eE]+)\)$"
+)
 
 
 def log(msg: str) -> None:
@@ -113,27 +120,78 @@ def apply(code: int) -> None:
         pactl("set-sink-mute", "@DEFAULT_SINK@", "toggle")
 
 
+def dbus_volume_code(line: str) -> int | None:
+    """Only a volume press from an InputPlumber DBus target changes audio."""
+    match = DBUS_VOLUME.fullmatch(line.strip())
+    if match is None:
+        return None
+    try:
+        if float(match['value']) != 1.0:
+            return None
+    except ValueError:
+        return None
+    return {'ui_volume_up': KEY_VOLUMEUP, 'ui_volume_down': KEY_VOLUMEDOWN,
+            'ui_volume_mute': KEY_MUTE}[match['event']]
+
+
 def main() -> int:
     devs = open_devices()
-    if not devs:
-        log("no gpio-keys/pmic_resin volume devices")
-        return 0
     fds = {fd: path for path, fd in devs}
-    while True:
-        try:
-            ready, _, _ = select.select(list(fds), [], [], 2.0)
-        except InterruptedError:
-            continue
-        for fd in ready:
+    # gdbus subscribes to public signals as the session user (busctl monitor
+    # would require root). It follows the well-known name across IP restarts.
+    # The DBus route also works when Steam removes the keyboard target.
+    try:
+        monitor = subprocess.Popen(
+            ['gdbus', 'monitor', '--system', '--dest', 'org.shadowblip.InputPlumber'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            env={**os.environ, 'LC_ALL': 'C'},
+        )
+    except FileNotFoundError:
+        log('gdbus is required for InputPlumber volume keys')
+        for fd in fds:
+            os.close(fd)
+        return 1
+    assert monitor.stdout is not None
+    dbus_fd = monitor.stdout.fileno()
+    pending = b''
+    log('watch InputPlumber DBus volume signals')
+    try:
+        while True:
             try:
-                data = os.read(fd, EVENT_SIZE * 8)
-            except OSError:
+                ready, _, _ = select.select([*fds, dbus_fd], [], [], 2.0)
+            except InterruptedError:
                 continue
-            for off in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
-                _s, _us, etype, code, value = struct.unpack_from(EVENT_FMT, data, off)
-                if etype == EV_KEY and value == 1:
-                    apply(code)
-    return 0
+            for fd in ready:
+                if fd == dbus_fd:
+                    data = os.read(fd, 4096)
+                    if not data:
+                        log('InputPlumber signal monitor stopped; restarting service')
+                        return 1
+                    lines = (pending + data).split(b'\n')
+                    pending = lines.pop()
+                    for line in lines:
+                        code = dbus_volume_code(line.decode('utf-8', errors='replace'))
+                        if code is not None:
+                            apply(code)
+                    continue
+                try:
+                    data = os.read(fd, EVENT_SIZE * 8)
+                except OSError:
+                    continue
+                for off in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
+                    _s, _us, etype, code, value = struct.unpack_from(EVENT_FMT, data, off)
+                    if etype == EV_KEY and value == 1:
+                        apply(code)
+    finally:
+        for fd in fds:
+            os.close(fd)
+        monitor.terminate()
+        try:
+            monitor.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            monitor.kill()
+            monitor.wait()
+        monitor.stdout.close()
 
 
 if __name__ == "__main__":

@@ -168,6 +168,13 @@ install_odin_composite() {
     "${R}/usr/lib/systemd/system/sm8550-fixpad.service"
   ln -sfn /usr/lib/systemd/system/sm8550-fixpad.service \
     "${R}/etc/systemd/system/multi-user.target.wants/sm8550-fixpad.service"
+  install -m0755 "${OVL}/usr/lib/steamos/sm8550-volume-keys" \
+    "${R}/usr/lib/steamos/sm8550-volume-keys"
+  install -d "${R}/usr/lib/systemd/user" "${R}/etc/systemd/user/default.target.wants"
+  install -m0644 "${OVL}/usr/lib/systemd/user/sm8550-volume-keys.service" \
+    "${R}/usr/lib/systemd/user/sm8550-volume-keys.service"
+  ln -sfn /usr/lib/systemd/user/sm8550-volume-keys.service \
+    "${R}/etc/systemd/user/default.target.wants/sm8550-volume-keys.service"
   local defaults
   defaults="$(mktemp -d)"
   install -d "$defaults/devices.d" "$defaults/capability_maps.d"

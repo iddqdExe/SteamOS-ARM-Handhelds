@@ -15,6 +15,10 @@ check_file "$PROFILE" "$R/etc/inputplumber/devices.d/02-retroid-pocket.yaml"
 check_file "$MAP" "$R/etc/inputplumber/capability_maps.d/retroid_mcu.yaml"
 check_file "$MAP" "$R/usr/share/inputplumber/capability_maps/retroid_mcu.yaml"
 check_file "$ROOT/steamos-overlay/usr/lib/steamos/sm8550-fixpad" "$R/usr/lib/steamos/sm8550-fixpad"
+check_file "$ROOT/steamos-overlay/usr/lib/steamos/sm8550-volume-keys" "$R/usr/lib/steamos/sm8550-volume-keys"
+check_file "$ROOT/steamos-overlay/usr/lib/systemd/user/sm8550-volume-keys.service" \
+  "$R/usr/lib/systemd/user/sm8550-volume-keys.service"
+[[ -x "$R/usr/bin/gdbus" ]] || { echo 'ERROR: gdbus missing; RP6 Volume Up cannot be handled' >&2; exit 1; }
 check_file "$ROOT/steamos-overlay/usr/lib/systemd/system/sm8550-fixpad.service" \
   "$R/usr/lib/systemd/system/sm8550-fixpad.service"
 check_file "$ROOT/steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf" \

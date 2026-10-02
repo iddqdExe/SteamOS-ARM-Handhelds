@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-02",
+  "scope": "RP6 SM8550 12GB microSD, Volume Up follow-up to module 1",
+  "kernel": "7.0.14-edge-sm8550",
+  "status": "applied_native_events_and_physical_buttons_verified",
+  "before_fix_volume_up_percent_delta": 0,
+  "native_evdev_probe": {
+    "method": "inject one EV_KEY press/release into each native source",
+    "volume_up_percent_delta": 5,
+    "volume_down_percent_delta": -5,
+    "keyboard_target_present": false,
+    "original_sink_volume_and_mute_restored": true
+  },
+  "linux_regression_tests": {
+    "count": 80,
+    "result": "passed",
+    "skipped": 0,
+    "scope": "entire current working tree, including uncommitted module 2 tests"
+  },
+  "hardware_button_acceptance": "confirmed_by_user",
+  "user_acceptance": {
+    "date": "2026-10-02",
+    "reply": "Работает",
+    "requested_checks": ["physical Volume Up", "physical Volume Down", "L4/R4 still work"],
+    "result": "accepted",
+    "scope": "installed live fix; fresh image and new sleep/reboot cycles were not tested in this follow-up"
+  },
+  "fresh_image_rebuilt_for_this_followup": false,
+  "installed_files_sha256": {
+    "sm8550-volume-keys": "f347ce176b3ff8a1a01175307876fecd16f51423e5e189c39fdf28880e5739d6",
+    "defaults/devices.d/02-retroid-pocket.yaml": "0297ae0cb4b387a6730f0ac7abd94b694d97073a27fcf32a55ae486a5beaf169",
+    "defaults/capability_maps.d/retroid_mcu.yaml": "2c99421526fae66bef299d8ec12a0707909289fe7d4b62b8b23a68433d49bd89"
+  },
+  "notes": [
+    "The original module 1 image receipt describes the previous image, without this follow-up."
+  ]
+}

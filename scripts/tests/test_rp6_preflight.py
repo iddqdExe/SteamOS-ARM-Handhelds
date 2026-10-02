@@ -18,6 +18,10 @@ class PreflightTests(unittest.TestCase):
             (root / 'var/lib/overlays/etc/upper').mkdir(parents=True)
             subprocess.run(['bash', str(REPO / 'scripts/install-inputplumber-sm8550.sh'),
                             str(root), '--config-only'], check=True, capture_output=True)
+            gdbus = root / 'usr/bin/gdbus'
+            gdbus.parent.mkdir(parents=True)
+            gdbus.write_text('#!/bin/sh\nexit 0\n')
+            gdbus.chmod(0o755)
             source, fixed, boot = [Path(tmp) / p for p in ['payload', 'fixed', 'KERNEL']]
             source.write_bytes(IMAGE + dtb())
             subprocess.run(['python3', str(TOOL), str(source), str(fixed)],
@@ -37,6 +41,14 @@ class PreflightTests(unittest.TestCase):
             write_boot(fixed.read_bytes())
             result = check()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            gdbus.chmod(0o644)
+            self.assertNotEqual(check().returncode, 0, 'missing volume signal runtime was accepted')
+            gdbus.chmod(0o755)
+            volume = root / 'usr/lib/steamos/sm8550-volume-keys'
+            volume_bytes = volume.read_bytes()
+            volume.write_text('stale volume handler')
+            self.assertNotEqual(check().returncode, 0, 'stale volume handler was accepted')
+            volume.write_bytes(volume_bytes)
             map_path = root / 'var/lib/overlays/etc/upper/inputplumber/capability_maps.d/retroid_mcu.yaml'
             good = map_path.read_bytes()
             map_path.write_text('stale override')
