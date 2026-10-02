@@ -19,7 +19,7 @@
 | Mango/startup, `c0dcada` | Постоянный путь исправляет потерю пресета. Донорский тайм-аут молча разрешает Steam стартовать без настроек; файл wait нужно явно доставлять нашим сборщиком | Пресет сохраняется в runtime текущего login; env публикуется атомарно; ожидание ограничено 5 s и завершается диагностикой при отказе |
 | Ранний `/etc`, `f08eaa6` | Устраняет чтение systemd bare `/etc`; поздний fallback не гарантирует работающие enabled units | Overlay монтируется после update recovery, до switch_root; отказ оставляет boot в аварийной оболочке. Helper включён в оба пути initramfs |
 | Decky, `20dec11` + `6799cc4` | Фактическая версия — prerelease `v3.2.10-pre1`; одной версии без digest недостаточно для воспроизводимости | Официальный asset закреплён SHA256, проверяется и offline cache. Добавлен Wants для network-online; локальный loader не скачивается при boot |
-| Обновление и откат | Старый пакет переносил плагины и пропускал loader | `homebrew/services` сохраняется, переносится и откатывается; settings/data/logs не заменяются. Старые пакеты и snapshots сохраняют прежнее поведение |
+| Обновление и откат | Старый пакет переносил плагины и пропускал loader | `homebrew/services` сохраняется, переносится и откатывается; Linux capabilities восстанавливаются из tar. Settings/data/logs не заменяются. Старые пакеты и snapshots сохраняют прежнее поведение |
 
 В исходном плане Mango был ошибочно связан с `f5361f9422e3d7c5aaee04773b13928a98f4787a`:
 этот merge относится к Bluetooth REDMAGIC 6. Нужные изменения находятся в
@@ -56,6 +56,8 @@ python3 scripts/prepare-rp6-session-test.py BASE.img UP01.img \
 ```
 
 Это производный тестовый образ, а не чистая сборка всего дистрибутива.
+Пакет нужно собирать в Linux filesystem с xattrs и разным регистром имён;
+в Docker на macOS используйте native volume для package output, затем копируйте готовый tar.gz.
 Пакет ограничен моделью `Retroid Pocket 6`; BOOT и rootfs проверяются как комплект.
 При первом обновлении со старым updater нужно до staging доставить текущий проверенный
 `konkr-update.py`: конфигурационный установщик ввода уже выполняет этот bootstrap;
@@ -64,12 +66,13 @@ python3 scripts/prepare-rp6-session-test.py BASE.img UP01.img \
 
 ## Проверки и открытая приёмка
 
-- ARM64 Linux: 75 тестов, без пропусков; реальные сценарии Xvfb проверяют восстановление игры,
+- ARM64 Linux: 76 тестов, без пропусков; реальные сценарии Xvfb проверяют восстановление игры,
   исключение Steam и ограничение частоты. Проверены upgrade/rollback loader, пользовательские maps/settings,
   malformed/missing cache, отсутствующий env, повторный вход, SHA/boot ID и отказ embedded repack.
+  Реальный security.capability проходит tar extraction → upgrade → rollback.
 - Реальный overlay mount в отдельном Linux mount namespace: enabled test unit появляется до systemd,
   повторный вызов не перемонтирует `/etc`, upper сохраняется после unmount.
-- macOS: 75 тестов, 8 Linux/Xvfb сценариев пропущены; это не заменяет Linux прогон.
+- macOS: 76 тестов, 9 Linux/Xvfb/root сценариев пропущены; это не заменяет Linux прогон.
 - Проверены shell syntax и отсутствие whitespace ошибок. Workflow `rp6-session.yml` добавлен;
   удалённый GitHub Actions запуск не выполнялся.
 - На RP6 ещё нужны cold boot/reboot, enabled test service после reboot/update, Game Mode/Desktop,

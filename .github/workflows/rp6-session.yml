@@ -28,6 +28,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y device-tree-compiler binutils rsync gcc libx11-dev xvfb
       - run: python -m pip install -r scripts/tests/requirements.txt
       - run: python -m unittest discover -s scripts/tests -v
+      - run: sudo "$(command -v python)" -m unittest scripts.tests.test_rp6_updater.UpdaterTests.test_payload_capabilities_survive_extract_upgrade_and_restore -v
       - run: |
           bash -n scripts/apply-overlays.sh scripts/import-sm8550-kernel.sh scripts/install-rp6-session.sh external-and-mods/kernel-common/build.sh steamos-overlay/usr/lib/steamos/gamescope-session
           sh -n external-and-mods/kernel-common/initramfs/init external-and-mods/kernel-common/initramfs/mount-etc-overlay steamos-overlay/usr/lib/steamos/wait-gamescope-env

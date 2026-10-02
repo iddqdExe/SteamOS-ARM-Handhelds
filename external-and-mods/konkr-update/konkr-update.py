@@ -195,6 +195,11 @@ def retarget_kernel(src, dst, rootarg, helper=BOOTIMG):
     dst.write_bytes(image.build(module.retarget(image.cmdline, rootarg)))
 
 
+def extract_payload(package, payload):
+    # GNU tar restores only user.* by default; system binaries also need capabilities.
+    run('tar', '--xattrs', '--xattrs-include=*', '--acls', '--numeric-owner', '-xzf', package, '-C', payload)
+
+
 def stage(args):
     if os.geteuid() != 0: raise ValueError('staging needs administrator access')
     model = Path('/sys/firmware/devicetree/base/model').read_text().rstrip('\0\n')
@@ -234,7 +239,7 @@ def stage(args):
         if shutil.disk_usage('/').free + managed < size + (512 << 20):
             raise ValueError('root partition is too small for this update')
         payload = work / 'payload'; payload.mkdir()
-        run('tar', '--xattrs', '--acls', '--numeric-owner', '-xzf', package, '-C', payload)
+        extract_payload(package, payload)
         verify_payload(payload, manifest)
         info = {'id': work.name, 'version': manifest['version'], 'sha256': expected,
                 'root_uuid': root_info['uuid'], 'home_uuid': home_info['uuid'],

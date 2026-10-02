@@ -2,6 +2,8 @@
 import hashlib
 import importlib.util
 import json
+import os
+import struct
 from pathlib import Path
 import shutil
 import sys
@@ -105,6 +107,28 @@ class UpdaterTests(unittest.TestCase):
         receipt.write_text(json.dumps(previous))
         updater.restore(self.root, self.boot, self.home, self.work)
         self.assertEqual(loader.read_text(), 'untouched loader')
+
+    def test_payload_capabilities_survive_extract_upgrade_and_restore(self):
+        if os.geteuid() != 0: self.skipTest('root/CAP_SETFCAP required')
+        old = self.put(self.root, 'usr/bin/capability-probe', 'old executable')
+        new = self.put(self.payload, 'root/usr/bin/capability-probe', 'new executable')
+        old.chmod(0o755); new.chmod(0o755)
+        old_cap = struct.pack('<5I', 0x02000001, 1 << 10, 0, 0, 0)
+        new_cap = struct.pack('<5I', 0x02000001, 1 << 23, 0, 0, 0)
+        os.setxattr(old, 'security.capability', old_cap)
+        os.setxattr(new, 'security.capability', new_cap)
+        self.manifest['files']['root/usr/bin/capability-probe'] = hashlib.sha256(new.read_bytes()).hexdigest()
+        package = self.work / 'capability-test.tar.gz'
+        subprocess.run(['tar', '--xattrs', '--acls', '--numeric-owner', '-czf', str(package),
+                        '-C', str(self.payload), '.'], check=True)
+        shutil.rmtree(self.payload); self.payload.mkdir()
+        updater.extract_payload(package, self.payload)
+        self.assertEqual(os.getxattr(self.payload / 'root/usr/bin/capability-probe', 'security.capability'), new_cap)
+        updater.snapshot(self.root, self.home, self.work)
+        updater.apply(self.root, self.boot, self.home, self.work, self.manifest)
+        self.assertEqual(os.getxattr(old, 'security.capability'), new_cap)
+        updater.restore(self.root, self.boot, self.home, self.work)
+        self.assertEqual(os.getxattr(old, 'security.capability'), old_cap)
 
     def test_bootstrap_replaces_the_old_updater_before_the_first_upgrade(self):
         custom = self.put(self.root, MAP, 'legacy assignments\n')
