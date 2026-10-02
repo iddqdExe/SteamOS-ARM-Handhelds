@@ -21,6 +21,7 @@ ap.add_argument('--soc', default='sm8650', choices=sorted(_updater.SOC_MODELS))
 ap.add_argument('--device', action='append', help='restrict the package to named models within --soc')
 ap.add_argument('--version', required=True)
 ap.add_argument('--output', required=True)
+ap.add_argument('--release-manifest', help='UP-08 build manifest; defaults to the embedded staged-rootfs manifest')
 a = ap.parse_args()
 root = Path(a.rootfs).resolve(); output = Path(a.output).resolve()
 home = Path(a.home).resolve() if a.home else root / 'home/steamos'
@@ -47,6 +48,15 @@ with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=output.parent) as 
         copy(home / 'homebrew/plugins' / name, stage / 'home/steamos/homebrew/plugins' / name)
     services = home / 'homebrew/services'
     if services.is_dir(): copy(services, stage / 'home/steamos/homebrew/services')
+    release_path = Path(a.release_manifest) if a.release_manifest else root / 'usr/share/steamos-arm/release-manifest.json'
+    release = json.loads(release_path.read_text()) if release_path.is_file() else None
+    if a.release_manifest and release is None: raise SystemExit('missing release manifest')
+    if release is not None:
+        marker = stage / 'root/usr/share/steamos-arm/release-manifest.json'
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        # Copy by replacement: the stage may have hard-linked files from rootfs.
+        marker.unlink(missing_ok=True)
+        marker.write_text(json.dumps(release, indent=2, sort_keys=True) + '\n')
     (stage / 'boot').mkdir()
     subprocess.run(['cp', a.kernel, str(stage / 'boot/KERNEL')], check=True)
     files = {}
@@ -59,9 +69,12 @@ with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=output.parent) as 
     manifest = {'format': 1, 'architecture': 'aarch64', 'devices': devices, 'version': a.version, 'files': files}
     provenance = root / 'usr/share/steamos-arm/up-01.json'
     if provenance.is_file(): manifest['provenance'] = json.loads(provenance.read_text())
+    if release is not None: manifest['release'] = release
+    _updater.verify_payload(stage, manifest)
     (stage / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     subprocess.run(['tar', '--xattrs', '--acls', '--numeric-owner', '-czf', str(output) + '.part',
                     '-C', str(stage), 'manifest.json', 'root', 'home', 'boot'], check=True)
+    _updater.validate_archive(str(output) + '.part')
     os.replace(str(output) + '.part', output)
 h = hashlib.sha256()
 with output.open('rb') as f:

@@ -128,6 +128,13 @@ Inherited from **SteamOS-Ubuntu**. See
 
 ## Acknowledgements
 
+UP-08 release/provenance practices were adapted from MaSieS4Fun's
+[release checklist](https://github.com/MaSieS4Fun/SteamOS-ARM-SM8550/blob/7eecdb23663fa88b218873a8acbe64e87df6d952/docs/RELEASE-CHECKLIST.md),
+Armada contributors' [patch accounting](https://github.com/armada-os/armada/blob/72f2a63f4b5417522887c781809b712c7b393a8a/packages/kernel/PATCHES.md),
+and shuuri-labs contributors' [Pocknix provenance](https://github.com/shuuri-labs/pocknix-os/blob/fcd5c755f1ed57ba3d219ffd2ac100bf83c672e1/PATCHES.md).
+No donor scripts or binaries were copied for this tooling phase; see
+[UP-08 scope and validation](docs/RP6-UP-08.ru.md).
+
 Thanks to **Valve**, the **SteamOS-Ubuntu** testers, **Hooandee**, and
 maintainers of **kernel.org**, **Armbian**, **ROCKNIX**, **Batocera**,
 **SteamDeckHomebrew**, **ShadowBlip**, **PancakeTAS**, **Flightless Mango**,

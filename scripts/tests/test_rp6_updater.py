@@ -10,6 +10,7 @@ import sys
 import tempfile
 import subprocess
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[2]
@@ -98,6 +99,69 @@ class UpdaterTests(unittest.TestCase):
         updater.restore(self.root, self.boot, self.home, self.work)
         self.assertEqual(old.read_text(), 'old loader')
         self.assertEqual(settings.read_text(), 'custom settings')
+
+    def test_upgrade_and_restore_preserve_power_and_game_profiles_in_both_etc_layers(self):
+        paths = ('etc/konkrd.conf', updater.UPPER + '/konkrd.conf')
+        for rel in paths:
+            self.put(self.root, rel, 'custom profile ' + rel)
+            path = self.put(self.payload, 'root/' + rel, 'factory profile')
+            self.manifest['files']['root/' + rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        self.put(self.home, 'steamos/.config/rp6-performance/games.json', 'home game profile')
+        self.put(self.root, 'var/lib/konkrd/state.json', '{"profile": "silent"}')
+        updater.snapshot(self.root, self.home, self.work)
+        updater.apply(self.root, self.boot, self.home, self.work, self.manifest)
+        for rel in paths: self.assertEqual((self.root / rel).read_text(), 'custom profile ' + rel)
+        updater.restore(self.root, self.boot, self.home, self.work)
+        for rel in paths: self.assertEqual((self.root / rel).read_text(), 'custom profile ' + rel)
+        self.assertEqual((self.home / 'steamos/.config/rp6-performance/games.json').read_text(), 'home game profile')
+        self.assertEqual((self.root / 'var/lib/konkrd/state.json').read_text(), '{"profile": "silent"}')
+
+    def recovery_fixture(self, current):
+        self.put(self.payload, 'boot/KERNEL', 'new kernel')
+        self.manifest['files']['boot/KERNEL'] = hashlib.sha256(b'new kernel').hexdigest()
+        updater.write_json(self.work / 'transaction.json', {
+            'id': 'fixture-transaction', 'manifest': self.manifest,
+            'root_uuid': 'fixture-root', 'home_uuid': 'fixture-home', 'boot_uuid': 'fixture-boot'})
+        self.put(self.root, updater.PENDING, 'fixture-transaction\n')
+        updater.state(self.work, current)
+        mounts = {str(self.root): 'fixture-root', str(self.home): 'fixture-home', str(self.boot): 'fixture-boot'}
+        # Only the mount UUID boundary is simulated; filesystem transitions and rsync are real.
+        self.mount_patch = patch.object(updater, 'mount_info', lambda path: {'uuid': mounts[path]})
+        self.mount_patch.start(); self.addCleanup(self.mount_patch.stop)
+        return SimpleNamespace(root=str(self.root), home=str(self.home), boot=str(self.boot), work=str(self.work))
+
+    def test_corrupt_payload_aborts_before_system_files_are_replaced(self):
+        marker = self.put(self.root, 'usr/bin/old-system', 'working system')
+        args = self.recovery_fixture('staged')
+        (self.payload / 'boot/KERNEL').write_text('corrupted')
+        self.assertEqual(updater.recover(args), 10)
+        self.assertEqual(marker.read_text(), 'working system')
+        self.assertEqual((self.boot / 'KERNEL').read_text(), 'old kernel')
+        self.assertFalse((self.work / 'backup').exists())
+
+    def test_interruption_after_partial_root_switch_restores_backup_on_next_recovery(self):
+        marker = self.put(self.root, 'usr/bin/old-system', 'working system')
+        self.put(self.home, 'steamos/.steam/steam/steamapps/appmanifest_42.acf', 'game manifest')
+        args = self.recovery_fixture('staged')
+        original = updater.copy_tree
+        def power_loss(src, dst, *positional, **kwargs):
+            original(src, dst, *positional, **kwargs)
+            if src == self.payload / 'root/usr': raise SystemExit('simulated power loss')
+        with patch.object(updater, 'copy_tree', power_loss):
+            with self.assertRaises(SystemExit): updater.recover(args)
+        self.assertFalse(marker.exists(), 'test must interrupt after an actual root replacement')
+        self.assertEqual(json.loads((self.work / 'state.json').read_text())['state'], 'applying')
+        self.assertEqual(updater.recover(args), 10)
+        self.assertEqual(marker.read_text(), 'working system')
+        self.assertEqual((self.boot / 'KERNEL').read_text(), 'old kernel')
+        self.assertEqual((self.home / 'steamos/.steam/steam/steamapps/appmanifest_42.acf').read_text(), 'game manifest')
+        self.assertFalse((self.root / updater.PENDING).exists())
+
+    def test_interrupted_abort_cleanup_resumes_without_stuck_pending_update(self):
+        args = self.recovery_fixture('aborted')
+        self.assertEqual(updater.recover(args), 10)
+        self.assertFalse((self.root / updater.PENDING).exists())
+        self.assertEqual((self.boot / 'KERNEL').read_text(), 'old kernel')
 
     def test_restore_older_snapshot_without_decky_service_receipt(self):
         loader = self.put(self.home, 'steamos/homebrew/services/PluginLoader', 'untouched loader')

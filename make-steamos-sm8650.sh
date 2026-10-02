@@ -92,6 +92,8 @@ Usage: $0 [options]
 Env: SOC (sm8650|sm8550) BOOT_MIB ROOT_MIB HOME_MIB STEAMOS_SM8650_IMG STEAMOS_ROOTFS
      IMAGE_KERNEL_OUT (this image's kernel) KERNEL_OUT (kernels for the rootfs)
      empty ROOT_MIB/HOME_MIB = auto (tight pack; home grows on first boot)
+     RP6_RELEASE_RECIPE (UP-08 JSON recipe); RP6_RELEASE_CHANNEL (beta-opt-in|default)
+     RP6_RELEASE_ALLOW_DIRTY=1 (record local changes, beta candidates only)
 EOF
 }
 
@@ -340,6 +342,17 @@ detach_img_loops() {
 }
 
 build_image() {
+  # UP-08 is explicit until the remaining clean-build and hardware gates are met.
+  # Validate the declared inputs before image allocation or destination replacement.
+  if [[ -n "${RP6_RELEASE_RECIPE:-}" ]]; then
+    [[ "$SOC" == sm8550 ]] || die "RP6 release manifests require SOC=sm8550"
+    [[ ! -e "$IMG" ]] || die "release output already exists: $IMG"
+    local release_args=(--repo "$ROOT" --recipe "$RP6_RELEASE_RECIPE"
+                        --channel "${RP6_RELEASE_CHANNEL:-beta-opt-in}")
+    if [[ "${RP6_RELEASE_ALLOW_DIRTY:-0}" == 1 ]]; then release_args+=(--allow-dirty); fi
+    python3 "${SCRIPTS}/build-rp6-release-manifest.py" create "${release_args[@]}" \
+      --rootfs "$R" --kernel "${KOUT}/boot/KERNEL" --output "${IMG}.inputs.json"
+  fi
   local total_mib root_uuid home_uuid disk_id
   local boot_dev root_dev home_dev
   # Fail before truncating an image if a reused rootfs/prebuilt kernel
@@ -488,6 +501,20 @@ EOF
   fi
   rm -f "${ktmp}"
 
+  if [[ -n "${RP6_RELEASE_RECIPE:-}" ]]; then
+    # Record the actually repacked BOOT file, not the pre-PARTUUID kernel.
+    python3 "${SCRIPTS}/build-rp6-release-manifest.py" create "${release_args[@]}" \
+      --rootfs "${MNT}/root" --kernel "${MNT}/boot/KERNEL" --output "${IMG}.build-manifest.json"
+    python3 - "${IMG}.inputs.json" "${IMG}.build-manifest.json" <<'PY'
+import json, sys
+before, after = (json.load(open(path)) for path in sys.argv[1:])
+for field in ('source', 'donors', 'inputs', 'components', 'transfers'):
+    if before[field] != after[field]: raise SystemExit('release inputs changed during build: ' + field)
+PY
+    sudo_run install -Dm0644 "${IMG}.build-manifest.json" \
+      "${MNT}/root/usr/share/steamos-arm/release-manifest.json"
+  fi
+
   sudo_run mkdir -p "${MNT}/root/opt/steamos-sm8650"
   sudo_run tee "${MNT}/root/opt/steamos-sm8650/IMAGE.txt" >/dev/null <<EOF
 image=$(basename "${IMG}")
@@ -512,6 +539,11 @@ EOF
   sync
   cleanup_image
   trap - EXIT
+
+  if [[ -n "${RP6_RELEASE_RECIPE:-}" ]]; then
+    python3 "${SCRIPTS}/build-rp6-release-manifest.py" finalize \
+      --manifest "${IMG}.build-manifest.json" --image "$IMG" --output "${IMG}.release.json"
+  fi
 
   log "Image ready: ${IMG}"
   log "$(ls -lh "${IMG}")"

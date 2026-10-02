@@ -1,0 +1,31 @@
+name: RP6 release tooling
+on:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'make-steamos-sm8650.sh'
+      - 'external-and-mods/konkr-update/**'
+      - 'external-and-mods/ufs-install/ufs-bootimg.py'
+      - 'docs/RP6-UP-08.ru.md'
+      - '.github/workflows/rp6-release.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'make-steamos-sm8650.sh'
+      - 'external-and-mods/konkr-update/**'
+      - 'external-and-mods/ufs-install/ufs-bootimg.py'
+      - 'docs/RP6-UP-08.ru.md'
+      - '.github/workflows/rp6-release.yml'
+  workflow_dispatch:
+jobs:
+  source-and-delivery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y device-tree-compiler binutils rsync gcc libx11-dev xvfb busybox-static cpio systemd zstd
+      - run: python -m pip install -r scripts/tests/requirements.txt
+      - run: sudo -E "$(command -v python)" -m unittest discover -s scripts/tests -v
+      - run: bash -n scripts/apply-overlays.sh scripts/import-sm8550-kernel.sh scripts/check-rp6-input.sh make-steamos-sm8650.sh

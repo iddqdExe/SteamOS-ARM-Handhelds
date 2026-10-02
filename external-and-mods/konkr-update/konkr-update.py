@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import shutil
 import subprocess
 import sys
@@ -36,7 +37,7 @@ HOME_DIRS = ('homebrew/plugins/konkr-control', 'homebrew/plugins/decky-lsfg-vk',
              'homebrew/services')  # UP-01: loader and version move/rollback together.
 PRESERVE = ('passwd', 'shadow', 'group', 'gshadow', 'machine-id', 'hostname', 'hosts',
             'fstab', 'crypttab', 'localtime', 'adjtime', 'resolv.conf', 'ssh',
-            'NetworkManager/system-connections', 'sudoers.d', 'inputplumber')
+            'NetworkManager/system-connections', 'sudoers.d', 'inputplumber', 'konkrd.conf')
 PENDING = 'var/lib/konkr-update/pending'
 
 
@@ -126,7 +127,71 @@ def validate_archive(package):
     if set(actual) != set(files): raise ValueError('manifest does not cover all payload files')
     for name, sha in files.items():
         if not re.fullmatch('[0-9a-f]{64}', sha): raise ValueError(f'invalid checksum: {name}')
+    validate_release(manifest)
     return manifest, total
+
+
+def validate_release(manifest):
+    """Legacy format-1 packages remain supported; UP-08 adds an explicit contract."""
+    release = manifest.get('release')
+    if release is None: return
+    target = {'model': 'Retroid Pocket 6', 'soc': 'SM8550', 'ram_gib': 12, 'media': 'microSD'}
+    if release.get('format') != 'rp6-release-1' or release.get('target') != target:
+        raise ValueError('unsupported RP6 release manifest')
+    if manifest['devices'] != ['Retroid Pocket 6']: raise ValueError('RP6 release must target only Retroid Pocket 6')
+    source = release.get('source', {})
+    if not re.fullmatch('[0-9a-f]{40}', source.get('sha', '')) or not isinstance(source.get('dirty'), bool):
+        raise ValueError('invalid release source provenance')
+    if release.get('channel') not in ('beta-opt-in', 'default'): raise ValueError('invalid release channel')
+    if release.get('decision') not in ('accepted', 'untested'): raise ValueError('invalid release decision')
+    if release['channel'] == 'default':
+        checks = ('source', 'ci', 'device', 'fresh_image', 'update', 'rollback')
+        if (source['dirty'] or release['decision'] != 'accepted' or not release.get('transfers')
+                or any(t.get('decision') != 'accepted' for t in release['transfers'])
+                or not release.get('rollback', {}).get('backup_id')
+                or any(release.get('validation', {}).get(c) != 'passed' for c in checks)
+                or any(not re.fullmatch('[0-9a-f]{64}', release.get('evidence', {}).get(c, {}).get('sha256', '')) for c in checks)):
+            raise ValueError('default release lacks hardware/update/rollback acceptance evidence')
+    files = manifest['files']
+    kernel = release.get('kernel', {})
+    if not kernel.get('sha256') or files.get('boot/KERNEL') != kernel['sha256']:
+        raise ValueError('release KERNEL checksum mismatch')
+    krel = kernel.get('release', '')
+    if not re.fullmatch('[A-Za-z0-9._+\-]+', krel): raise ValueError('invalid release kernel version')
+    modules = release.get('modules', {})
+    if not modules or not any('.ko' in name and 'sha256' in record for name, record in modules.items()):
+        raise ValueError('release requires matching modules')
+    groups = ((f'root/usr/lib/modules/{krel}/', modules), ('root/usr/lib/firmware/', release.get('firmware', {})),
+              ('root/', release.get('runtime', {})))
+    for prefix, entries in groups:
+        for name, record in entries.items():
+            p = PurePosixPath(name)
+            if p.is_absolute() or '..' in p.parts or not name: raise ValueError('unsafe release inventory path')
+            if prefix == 'root/' and not name.startswith(('usr/', 'etc/')): raise ValueError('invalid release runtime path')
+            if not re.fullmatch('[0-7]{4}', record.get('mode', '')): raise ValueError('invalid release file mode')
+            if 'sha256' in record and files.get(prefix + name) != record['sha256']:
+                raise ValueError(f'release modules/runtime checksum mismatch: {prefix}{name}')
+    if 'root/usr/share/steamos-arm/release-manifest.json' not in files:
+        raise ValueError('missing embedded release manifest')
+
+
+def verify_release_payload(payload, manifest):
+    release = manifest.get('release')
+    if release is None: return
+    validate_release(manifest)
+    marker = payload / 'root/usr/share/steamos-arm/release-manifest.json'
+    if json.loads(marker.read_text()) != release: raise ValueError('embedded release manifest differs from package')
+    groups = ((f'root/usr/lib/modules/{release["kernel"]["release"]}', release['modules']),
+              ('root/usr/lib/firmware', release.get('firmware', {})), ('root', release.get('runtime', {})))
+    for prefix, entries in groups:
+        for name, record in entries.items():
+            path = payload / prefix / name
+            if f'{stat.S_IMODE(path.lstat().st_mode):04o}' != record['mode']:
+                raise ValueError(f'release file mode mismatch: {prefix}/{name}')
+            if 'symlink' in record:
+                if not path.is_symlink() or os.readlink(path) != record['symlink']:
+                    raise ValueError(f'release symlink mismatch: {prefix}/{name}')
+            elif path.is_symlink() or not path.is_file(): raise ValueError(f'release file type mismatch: {prefix}/{name}')
 
 
 def verify_payload(payload, manifest):
@@ -137,6 +202,7 @@ def verify_payload(payload, manifest):
     for d in ROOT_DIRS:
         if (payload / 'root' / d).is_symlink() or not (payload / 'root' / d).is_dir(): raise ValueError(f'missing system directory: {d}')
     if not (payload / 'boot/KERNEL').is_file(): raise ValueError('missing KERNEL')
+    verify_release_payload(payload, manifest)
 
 
 BOOTIMG = Path('/usr/share/easy-ufs-install/ufs-bootimg.py')
@@ -365,7 +431,7 @@ def recover(args):
     current = json.loads((work / 'state.json').read_text())['state']
     if current == 'committed':
         pending.unlink(); os.sync(); return 0
-    if current == 'rolled-back':
+    if current in ('rolled-back', 'aborted'):
         pending.unlink(); os.sync(); return 10
     if current == 'staged':
         try:
