@@ -19,9 +19,10 @@ The priority is button layout and rear buttons, then power management, then meas
   DSI brightness write returning EPROTO after the panel-on request; retrying
   after panel unblank restored the display. The RP6 standby script now waits
   for unblank and reports restoration failures. Three isolated display cycles
-  passed. After installing the script on RP6, the first full cycle without
-  a game and the first DMC windowed cycle passed user/native checks. Repeated
-  cycles, reboot verification and delivery in the image remain pending.
+  passed. After installing the script on RP6, five full software-standby cycles
+  passed user/native checks: one without a game, three in DMC windowed and one
+  after reboot. Script persistence and automatic SSH also passed. Fresh-image
+  and hardware update/rollback checks remain pending; kernel suspend was not exercised.
   See [RP6-UP-01.ru.md](RP6-UP-01.ru.md).
 
 For upstream device reports, consult the [upstream tracker](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds/issues). Keep the device, image and component versions attached to every result.
