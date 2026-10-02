@@ -1,10 +1,13 @@
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / 'scripts/rp6-devtools.py'
@@ -98,6 +101,70 @@ class DevtoolsTests(unittest.TestCase):
             self.assertTrue(hasattr(mod,'load_boot_report'),'Boot-report freshness guard is missing')
             with self.assertRaises(ValueError): mod.load_boot_report(path,'current')
             self.assertEqual(mod.load_boot_report(path,'previous')['boot_id'],'previous')
+
+    def test_reboot_waits_for_new_boot_instead_of_accepting_old_connection(self):
+        mod=self.runner()
+        self.assertTrue(hasattr(mod,'wait_for_new_boot'),'Reboot reconnection verification is missing')
+        replies=iter([{'boot_id':'previous'},{'boot_id':'current'}])
+        result=mod.wait_for_new_boot('previous',lambda:next(replies),timeout=1,delay=0)
+        self.assertEqual(result['boot_id'],'current')
+
+    def test_reboot_cannot_succeed_when_boot_id_does_not_change(self):
+        mod=self.runner()
+        self.assertTrue(hasattr(mod,'wait_for_new_boot'),'Reboot reconnection verification is missing')
+        with self.assertRaises(TimeoutError):
+            mod.wait_for_new_boot('previous',lambda:{'boot_id':'previous'},timeout=0.01,delay=0.002)
+
+    def test_boot_capture_waits_for_game_session_focusfix(self):
+        mod=load(REPO/'scripts/rp6-devtools/snapshot.py')
+        self.assertTrue(hasattr(mod,'collect_startup'),'Boot capture readiness wait is missing')
+        starting=snapshot(); starting['processes'].append({'pid':52,'comm':'gamescope'})
+        starting['user_focusfix']={'ActiveState':'inactive'}
+        ready=snapshot(); ready['processes'].append({'pid':53,'comm':'gamescope-wl'})
+        ready['user_focusfix']={'ActiveState':'active'}; ready['root']={'status':'unavailable'}
+        replies=iter([starting,ready])
+        result=mod.collect_startup(lambda deadline:next(replies),timeout=1,delay=0)
+        self.assertEqual(result['user_focusfix']['ActiveState'],'active')
+        self.assertEqual(result['startup_wait']['status'],'ready')
+        self.assertIn('focusfix_in_game_mode',result['startup_wait']['initial_not_ready'])
+        self.assertEqual(self.runner().assess(result)['status'],'limited')
+
+    def test_boot_capture_preserves_failure_when_session_never_becomes_ready(self):
+        mod=load(REPO/'scripts/rp6-devtools/snapshot.py')
+        self.assertTrue(hasattr(mod,'collect_startup'),'Boot capture readiness wait is missing')
+        data=snapshot(); data['processes'].append({'pid':52,'comm':'gamescope'})
+        data['user_focusfix']={'ActiveState':'inactive'}
+        result=mod.collect_startup(lambda deadline:dict(data),timeout=0.01,delay=0.002)
+        self.assertEqual(result['startup_wait']['status'],'timeout')
+        self.assertEqual(result['user_focusfix']['ActiveState'],'inactive')
+        self.assertEqual(self.runner().assess(result)['status'],'fail')
+
+    def test_command_timeout_uses_remaining_boot_capture_budget(self):
+        mod=load(REPO/'scripts/rp6-devtools/snapshot.py')
+        self.assertIn('deadline',inspect.signature(mod.run).parameters,'Command budget is missing')
+        started=time.monotonic(); deadline=started+0.03
+        result=mod.run([sys.executable,'-c','import time; time.sleep(2)'],timeout=2,deadline=deadline)
+        self.assertIn('error',result)
+        self.assertLess(time.monotonic()-started,1)
+        expired=mod.run([sys.executable,'-c','print("late-command-ran")'],deadline=deadline)
+        self.assertIn('error',expired)
+        self.assertNotIn('late-command-ran',expired.get('stdout',''))
+
+    def test_boot_capture_passes_one_deadline_to_the_last_slow_probe(self):
+        mod=load(REPO/'scripts/rp6-devtools/snapshot.py')
+        self.assertIn('deadline',inspect.signature(mod.collect).parameters,'Collection budget is missing')
+        tick=[0.0]; seen=[]
+        data=snapshot(); data['processes'].append({'pid':52,'comm':'gamescope'})
+        data['user_focusfix']={'ActiveState':'inactive'}
+        def probe(deadline):
+            seen.append(deadline)
+            tick[0]+=min(0.5 if len(seen)==1 else 145,deadline-tick[0])
+            return dict(data)
+        with patch.object(mod.time,'monotonic',side_effect=lambda:tick[0]):
+            result=mod.collect_startup(probe,timeout=90,delay=0)
+        self.assertEqual(seen,[90,90])
+        self.assertEqual(result['startup_wait']['elapsed_seconds'],90)
+        self.assertEqual(result['startup_wait']['status'],'timeout')
 
 
 if __name__ == '__main__': unittest.main()

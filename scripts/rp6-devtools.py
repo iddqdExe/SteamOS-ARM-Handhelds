@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 
 FILES = Path(__file__).with_name('rp6-devtools')
 ACTIONS = ('snapshot', 'enable-ssh', 'restart-decky', 'restart-konkrd', 'reboot')
@@ -61,6 +62,35 @@ def load_boot_report(path, current_boot_id):
     return data
 
 
+def wait_for_new_boot(previous, probe, timeout=90, delay=2):
+    deadline = time.monotonic() + timeout
+    last_error = ''
+    while time.monotonic() < deadline:
+        try:
+            data = probe()
+            if isinstance(data, dict) and data.get('boot_id') and data['boot_id'] != previous:
+                return data
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            last_error = str(exc)
+        time.sleep(min(delay, max(0, deadline - time.monotonic())))
+    raise TimeoutError(f'No new boot ID observed after reboot: {last_error}')
+
+
+def reboot(profile):
+    probe_source = 'import json\nfrom pathlib import Path\nprint(json.dumps({"boot_id":Path("/proc/sys/kernel/random/boot_id").read_text().strip(),"model":Path("/sys/firmware/devicetree/base/model").read_text().rstrip("\\x00\\n")}))\n'
+    before = remote(profile, probe_source)
+    if before.get('model') != 'Retroid Pocket 6' or not before.get('boot_id'):
+        raise ValueError('RP6 identity and boot ID required before reboot')
+    source = 'import subprocess,sys\np=subprocess.run(["sudo","-n","-k","/usr/local/libexec/rp6-devtools-root","reboot"],capture_output=True,text=True,timeout=30)\nprint(p.stdout,end="")\nprint(p.stderr,end="",file=sys.stderr)\nraise SystemExit(p.returncode)\n'
+    request = subprocess.run(ssh_command(profile), input=source, text=True, capture_output=True, timeout=40)
+    if request.returncode not in (0, 255):
+        raise ValueError(f'Reboot request failed: {request.stderr[-1500:]}')
+    after = wait_for_new_boot(before['boot_id'], lambda: remote(profile, probe_source))
+    if after.get('model') != 'Retroid Pocket 6': raise ValueError('Unexpected device after reboot')
+    return {'action': 'reboot', 'status': 'verified_new_boot',
+            'previous_boot_id': before['boot_id'], 'boot_id': after['boot_id']}
+
+
 def assess(data, expected_kernel=None):
     checks = {}
     try:
@@ -89,7 +119,7 @@ def assess(data, expected_kernel=None):
 
 def stage(profile):
     files = {f.name: base64.b64encode(f.read_bytes()).decode() for f in FILES.iterdir() if f.is_file()}
-    service = '[Unit]\nDescription=RP6 development boot snapshot\n[Service]\nType=oneshot\nExecStart=/usr/bin/python3 -I %h/.local/lib/rp6-devtools/snapshot.py --save\nTimeoutStartSec=60\n'
+    service = '[Unit]\nDescription=RP6 development boot snapshot\n[Service]\nType=oneshot\nExecStart=/usr/bin/python3 -I %h/.local/lib/rp6-devtools/snapshot.py --save\nTimeoutStartSec=180\n'
     timer = '[Unit]\nDescription=Capture RP6 diagnostics once after user manager starts\n[Timer]\nOnStartupSec=45\nAccuracySec=5\nUnit=rp6-devtools-snapshot.service\n[Install]\nWantedBy=timers.target\n'
     source = 'import base64,json,os,tempfile,subprocess\nfrom pathlib import Path\n' + inspect.getsource(write_owned)
     source += '\nmodel=Path("/sys/firmware/devicetree/base/model").read_text().rstrip("\\x00\\n")\n'
@@ -130,8 +160,10 @@ def main():
             source += 'print(json.dumps(load_boot_report(Path.home()/".local/state/rp6-devtools/latest.json",boot)))\n'
             result = remote(profile, source)
             result['assessment'] = assess(result, profile.get('expected_kernel_sha256'))
+        elif args.command == 'action' and args.action == 'reboot':
+            result = reboot(profile)
         else:
-            source = f'import subprocess\np=subprocess.run(["sudo","-n","/usr/local/libexec/rp6-devtools-root",{args.action!r}],text=True,capture_output=True,timeout=30)\n'
+            source = f'import subprocess\np=subprocess.run(["sudo","-n","-k","/usr/local/libexec/rp6-devtools-root",{args.action!r}],text=True,capture_output=True,timeout=30)\n'
             source += 'print(p.stdout,end="")\nraise SystemExit(p.returncode)\n'
             result = remote(profile, source)
     encoded = (json.dumps(result, ensure_ascii=False, indent=2) + '\n').encode()

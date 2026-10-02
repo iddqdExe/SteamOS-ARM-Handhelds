@@ -40,9 +40,20 @@
 - [x] Install user-only files/timer over pinned SSH; collect a fresh report. Stage privileged installation and give the user one concrete local sudo command.
 - [x] Review the complete change and record source/device/root-bootstrap boundaries.
 
-Results: 90 ARM64 Linux tests passed, no skips; 90 macOS tests, 9 skips.
+Results: 96 ARM64 Linux tests passed without skips; 96 macOS tests, 9 skips.
+Live integration fixes added reboot-ID verification and boot-report readiness
+regressions, each reproduced RED and fixed GREEN.
 Independent review identified file-mode normalization and stale boot-report bugs;
 both reproduced RED and fixed GREEN. Observation name now says mounted /etc,
 without asserting early ordering from a live snapshot. User timer executed and
-saved a current-boot report; root helper is staged but requires local sudo bootstrap.
+saved a current-boot report. User completed local root bootstrap and moved the
+policy after vendor wheel; password-free fixed commands and refusal of arbitrary
+sudo verified with `-n -k`. Two warm reboots proved automatic SSH startup and
+root-helper persistence. The second timer ran at uptime 54.7 s before focusfix
+started at 57.2 s; late snapshot passed. Added bounded readiness waiting with
+initial/final non-ready observations; timeout preserves a failing report.
+Review found the final probe could overrun the service timeout. Reproduced RED;
+one deadline now caps every subprocess and prohibits expired-budget commands.
+Updated user service validated on RP6 and executed explicitly in the current boot.
+Cold/offline boot and visual/game/input/suspend acceptance remain pending.
 No kernel, image credentials or default system overlays changed.
