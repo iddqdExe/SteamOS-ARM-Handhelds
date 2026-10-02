@@ -55,5 +55,9 @@ initial/final non-ready observations; timeout preserves a failing report.
 Review found the final probe could overrun the service timeout. Reproduced RED;
 one deadline now caps every subprocess and prohibits expired-budget commands.
 Updated user service validated on RP6 and executed explicitly in the current boot.
-Cold/offline boot and visual/game/input/suspend acceptance remain pending.
+Cold/offline boot passed: user confirmed Game Mode and KONKR Control; automatic
+new-boot report at 54.91 s recorded Wi-Fi disabled and all system checks passing.
+SSH started automatically at 9.69 s; timer exited 0. After Wi-Fi enable, SSH
+collected a passing live snapshot with the same boot ID and Loader PID.
+Whole-module game/input/suspend and supported-update acceptance remain separate.
 No kernel, image credentials or default system overlays changed.

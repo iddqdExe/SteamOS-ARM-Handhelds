@@ -66,20 +66,19 @@ python3 scripts/prepare-rp6-session-test.py BASE.img UP01.img \
 
 ## Проверки и открытая приёмка
 
-- ARM64 Linux: 80 тестов, без пропусков; реальные сценарии Xvfb проверяют восстановление игры,
+- ARM64 Linux: 96 тестов вместе с opt-in devtools, без пропусков; реальные сценарии Xvfb проверяют восстановление игры,
   исключение Steam и ограничение частоты. Проверены upgrade/rollback loader, пользовательские maps/settings,
   malformed/missing cache, отсутствующий env, повторный вход, SHA/boot ID и отказ embedded repack.
   Реальный security.capability проходит tar extraction → upgrade → rollback.
 - Реальный overlay mount в отдельном Linux mount namespace: enabled test unit появляется до systemd,
   повторный вызов не перемонтирует `/etc`, upper сохраняется после unmount.
-- macOS: 80 тестов, 9 Linux/Xvfb/root сценариев пропущены; это не заменяет Linux прогон.
+- macOS: 96 тестов, 9 Linux/Xvfb/root сценариев пропущены; это не заменяет Linux прогон.
 - Проверены shell syntax и отсутствие whitespace ошибок. Workflow `rp6-session.yml` добавлен;
   удалённый GitHub Actions запуск не выполнялся.
-- На RP6 ещё нужны повторный cold boot, enabled test service после reboot/update,
-  повторные fullscreen QAM циклы в других играх и KONKR Control при старте без сети и появлении сети позднее,
-  отсутствие второго loader, прежние L4/R4/триггеры/Volume Up и звук/сон.
+- На RP6 ещё нужны supported update/rollback и сохранение enabled test service после update,
+  повторные fullscreen QAM циклы в других играх, прежние L4/R4/триггеры/Volume Up и звук/сон.
 
-UP-01 пока **кандидат для аппаратной проверки**, checkbox приёмки исходного плана не отмечены.
+UP-01 пока **кандидат для аппаратной проверки**; общая аппаратная приёмка остаётся открытой.
 Decky prerelease остаётся явно закреплённым тестовым компонентом.
 
 Первая загрузка кандидата на RP6 остановилась на `ETC OVERLAY FAILED` до systemd.
@@ -120,11 +119,15 @@ env атомарно публикуется заново с тем же путё
 подтверждены по SSH. Диагностический SSH сначала был запущен вручную, затем
 его enabled-ссылка проверена в постоянном upper `/etc`. После установки opt-in
 devtools два удалённых тёплых перезапуска подтвердили автоматический старт SSH,
-сохранение узкой sudo-политики и чтение ожидаемого BOOT SHA256. Холодная загрузка
-этого тестового сервиса ещё не подтверждена. Инструменты описаны в
+сохранение узкой sudo-политики и чтение ожидаемого BOOT SHA256. Пользователь затем
+полностью выключил и включил RP6 без Wi-Fi и подтвердил Game Mode и KONKR Control
+без ошибок. Автоматический отчёт нового boot ID на uptime 54,91 с показывает
+Wi-Fi `disabled`, активный SSH, единственный Loader, focusfix и ожидаемый BOOT SHA256.
+После включения сети по SSH подтверждены тот же boot ID и Loader PID, активные
+службы и отсутствие failed units. Инструменты описаны в
 [RP6-DEVTOOLS.ru.md](RP6-DEVTOOLS.ru.md).
-Эти результаты не заменяют проверки других игр, cold boot, offline/late-network,
-update/rollback и ввода/звука/сна. SSH-ключ и его включение не входят в распространяемый образ.
+Эти результаты не заменяют проверки других игр, update/rollback и ввода/звука/сна.
+SSH-ключ и его включение не входят в распространяемый образ.
 
 ## Откат
 
