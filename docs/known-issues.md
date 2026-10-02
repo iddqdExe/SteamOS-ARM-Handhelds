@@ -15,7 +15,11 @@ The priority is button layout and rear buttons, then power management, then meas
 - UP-01 hardware acceptance found a black physical screen after software standby
   in DMC, with audio and game rendering still running. QAM was also invisible;
   an explicit panel wake and a separate DPMS off/on cycle did not recover it.
-  A reboot restored visible Game Mode. Standby remains unaccepted; the cause
-  is under investigation. See [RP6-UP-01.ru.md](RP6-UP-01.ru.md).
+  A reboot restored visible Game Mode. An isolated test reproduced a premature
+  DSI brightness write returning EPROTO after the panel-on request; retrying
+  after panel unblank restored the display. The RP6 standby script now waits
+  for unblank and reports restoration failures. Three isolated display cycles
+  passed, but full standby and delivery of this fix in the image remain
+  unaccepted. See [RP6-UP-01.ru.md](RP6-UP-01.ru.md).
 
 For upstream device reports, consult the [upstream tracker](https://github.com/hashtagbasit/SteamOS-ARM-Handhelds/issues). Keep the device, image and component versions attached to every result.
