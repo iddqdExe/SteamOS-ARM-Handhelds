@@ -45,11 +45,13 @@ def load() -> dict[str, Any]:
 
 
 def save(st: dict[str, Any]) -> None:
+    subprocess.run(["systemctl", "is-active", "--quiet", "konkrd.service"],
+                   check=True, timeout=5)
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
     with open(STATE + ".tmp", "w", encoding="utf-8") as fh:
         json.dump(st, fh, indent=2)
     os.replace(STATE + ".tmp", STATE)
-    subprocess.run(["systemctl", "kill", "-s", "HUP", "konkrd.service"], check=False)
+    subprocess.run(["systemctl", "kill", "-s", "HUP", "konkrd.service"], check=True, timeout=5)
 
 
 def telemetry() -> dict[str, Any]:

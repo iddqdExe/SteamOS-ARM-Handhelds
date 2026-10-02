@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Derive a local RP6 test image from the exact verified, repaired beta8 base.
 
-Includes module1 input fixes; --include-power adds the module2 standby pair.
+Includes module1 input fixes; --include-power adds module2 standby and CPU profiles.
 
 Linux/root only. Uses loop devices for regular image files; no card writes.
 This preserves beta8 userspace and is not a clean source distro build.
@@ -60,13 +60,14 @@ def validate_base(path):
 
 
 @contextmanager
-def image_mounts(image):
+def image_mounts(image, readonly_boot=False):
     folder = Path(tempfile.mkdtemp(prefix='rp6-image-')); mounts = []
     try:
         for name, index in (('boot', 0), ('root', 1)):
             dest = folder / name; dest.mkdir()
             _, start, size = LAYOUT[index]
-            run('mount', '-o', f'loop,offset={start * 512},sizelimit={size * 512}', image, dest)
+            access = 'ro,' if name == 'boot' and readonly_boot else ''
+            run('mount', '-o', f'loop,{access}offset={start * 512},sizelimit={size * 512}', image, dest)
             mounts.append(dest)
         yield folder / 'boot', folder / 'root'
     finally:
@@ -81,7 +82,8 @@ def image_mounts(image):
 
 def install_power(root):
     run('bash', REPO / 'scripts/install-rp6-power.sh', root)
-    return ['usr/lib/konkr/konkr-standby', 'usr/lib/konkr/konkr-sleep']
+    return ['usr/lib/konkr/konkr-standby', 'usr/lib/konkr/konkr-sleep',
+            'usr/lib/konkr/konkrd', 'usr/bin/konkrctl']
 
 
 def build(base, output, reuse, include_power=False):
@@ -113,7 +115,8 @@ def build(base, output, reuse, include_power=False):
         'steamos-overlay/usr/lib/systemd/system/inputplumber.service.d/99-sm8550.conf')}
     if include_power:
         for name in ('scripts/install-rp6-power.sh', 'sm8650-overlay/usr/lib/konkr/konkr-standby',
-                     'sm8650-overlay/usr/lib/konkr/konkr-sleep'):
+                     'sm8650-overlay/usr/lib/konkr/konkr-sleep',
+                     'sm8650-overlay/usr/lib/konkr/konkrd', 'sm8650-overlay/usr/bin/konkrctl'):
             info['build_source_sha256'][name] = digest(REPO / name)
     with image_mounts(partial) as (boot, root):
         old_bytes = (boot / 'KERNEL').read_bytes()
@@ -173,7 +176,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('base', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--reuse-verified-copy', action='store_true', help='verify and use output.img.partial already copied on the host')
-    parser.add_argument('--include-power', action='store_true', help='include module2 standby/helper pair together with all module1 fixes')
+    parser.add_argument('--include-power', action='store_true', help='include module2 standby and CPU profiles together with all module1 fixes')
     args = parser.parse_args()
     try: build(args.base, args.output, args.reuse_verified_copy, args.include_power)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:

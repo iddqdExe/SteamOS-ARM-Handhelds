@@ -49,6 +49,13 @@ FAN_CURVES = {
 }
 # fraction of the GPU OPP range: (floor, ceiling)
 GPU_RANGE = {"silent": (0.0, 0.75), "balanced": (0.0, 1.0), "turbo": (0.35, 1.0)}
+# RP6 trial: CPU caps only, in kHz (little / performance / prime).
+# GPU keeps its full dynamic range in every profile.
+RP6_CPU_CAPS = {
+    "silent": (1459200, 1785600, 1843200),
+    "balanced": (1670400, 2188800, 2342400),
+    "turbo": (2016000, 2803200, 2956800),
+}
 # per-thread uclamp.min for game threads (0..1024)
 GAME_UCLAMP = {"silent": 0, "balanced": 256, "turbo": 512}
 # The Steam UI path. Mainline EAS parks these bursty, light threads on the
@@ -306,13 +313,50 @@ def gpu_devfreq() -> str | None:
     return None
 
 
-def apply_gpu(profile: str) -> None:
+def is_rp6() -> bool:
+    compatible = rd("/sys/firmware/devicetree/base/compatible").split("\0")
+    return (rd("/sys/firmware/devicetree/base/model").rstrip("\0") == "Retroid Pocket 6"
+            and "retroidpocket,rp6" in compatible and "qcom,sm8550" in compatible)
+
+
+def checked_clock_write(path: str, value) -> bool:
+    if not wr(path, value):
+        log(f"clock write failed: {path} = {value}")
+        return False
+    # CPU frequency QoS updates policy limits through a workqueue. A successful
+    # write can precede its visible value; wait for readback without rewriting.
+    deadline = time.monotonic() + 1.0
+    while True:
+        actual = rd(path)
+        if actual == str(value):
+            return True
+        if time.monotonic() >= deadline:
+            log(f"clock readback failed: {path} requested {value}, got {actual!r}")
+            return False
+        time.sleep(0.02)
+
+
+def apply_gpu(profile: str) -> bool:
     d = gpu_devfreq()
     if not d:
-        return
+        return not is_rp6()
     freqs = sorted(int(f) for f in rd(f"{d}/available_frequencies").split() if f.isdigit())
     if not freqs:
-        return
+        return not is_rp6()
+    if is_rp6():
+        # Clear the legacy Silent ceiling / Turbo floor, without holding the
+        # GPU at maximum. Do not use this path while software standby is active.
+        # Both bounds read the effective range including other kernel QoS/OPP
+        # constraints. A boosted floor or cooling ceiling need not equal our
+        # requests; successful sysfs writes update our own QoS requests.
+        if not wr(f"{d}/min_freq", freqs[0]):
+            log(f"clock write failed: {d}/min_freq = {freqs[0]}")
+            return False
+        if not wr(f"{d}/max_freq", freqs[-1]):
+            log(f"clock write failed: {d}/max_freq = {freqs[-1]}")
+            return False
+        wr(f"{d}/polling_interval", 16)
+        return True
     lo, hi = GPU_RANGE[profile]
     fmin = freqs[int(lo * (len(freqs) - 1))]
     fmax = freqs[int(round(hi * (len(freqs) - 1)))]
@@ -321,12 +365,49 @@ def apply_gpu(profile: str) -> None:
     wr(f"{d}/min_freq", fmin)
     wr(f"{d}/max_freq", fmax)
     wr(f"{d}/polling_interval", 16)
+    return True
 
 
-def apply_cpu(profile: str) -> None:
+def apply_cpu(profile: str) -> bool:
     """schedutil everywhere (the ROCKNIX default is `performance`, which
     holds all eight cores — little A520s included — at max clock: heat for
     nothing). Turbo pins only the big clusters to `performance`."""
+    if is_rp6():
+        groups = {(0, 1, 2): 0, (3, 4, 5, 6): 1, (7,): 2}
+        plan = []
+        try:
+            seen = set()
+            for pol in sorted(glob.glob("/sys/devices/system/cpu/cpufreq/policy*")):
+                cpus = tuple(sorted(int(c) for c in rd(f"{pol}/related_cpus").split()))
+                group = groups[cpus]
+                if group in seen:
+                    raise ValueError(f"duplicate CPU cluster: {pol}")
+                seen.add(group)
+                low = int(rd(f"{pol}/cpuinfo_min_freq"))
+                high = int(rd(f"{pol}/cpuinfo_max_freq"))
+                freqs = sorted(set(int(f) for f in rd(f"{pol}/scaling_available_frequencies").split()))
+                limit = min(high, RP6_CPU_CAPS[profile][group])
+                eligible = [f for f in freqs if low <= f <= limit]
+                if (not eligible or low not in freqs
+                        or "schedutil" not in rd(f"{pol}/scaling_available_governors").split()):
+                    raise ValueError(f"unsupported CPU frequency/governor data: {pol}")
+                plan.append((pol, low, eligible[-1]))
+            if seen != {0, 1, 2}:
+                raise ValueError("incomplete RP6 CPU clusters")
+        except (ValueError, KeyError) as exc:
+            log(f"CPU profile {profile} rejected: {exc}")
+            return False
+        ok = True
+        for pol, low, cap in plan:
+            # Touch boost may have left min above the new ceiling. Lower min
+            # first; the next touch tick reapplies a floor bounded by this cap.
+            for name, value in (("scaling_min_freq", low), ("scaling_max_freq", cap),
+                                ("scaling_governor", "schedutil")):
+                if not checked_clock_write(f"{pol}/{name}", value):
+                    ok = False
+                    break
+            wr(f"{pol}/schedutil/rate_limit_us", 500)
+        return ok
     big = big_cpus()
     for pol in glob.glob("/sys/devices/system/cpu/cpufreq/policy*"):
         govs = rd(f"{pol}/scaling_available_governors")
@@ -339,6 +420,7 @@ def apply_cpu(profile: str) -> None:
         if gov == "schedutil":
             wr(f"{pol}/schedutil/rate_limit_us", 500)
         wr(f"{pol}/scaling_max_freq", rd(f"{pol}/cpuinfo_max_freq"))
+    return True
 
 
 def big_cpus() -> set[int]:
@@ -811,11 +893,20 @@ class TouchBoost:
 
     def tick(self, standby: bool) -> None:
         want = not standby and time.monotonic() - self.last_touch < TOUCH_BOOST_HOLD_S
-        if want == self.active:
+        rp6 = is_rp6()
+        if want == self.active and not rp6:
             return
         self.active = want
         for pol, floor in self.floors.items():
-            wr(f"{pol}/scaling_min_freq", floor if want else rd(f"{pol}/cpuinfo_min_freq"))
+            value = floor if want else rd(f"{pol}/cpuinfo_min_freq")
+            if rp6:
+                try:
+                    value = min(int(value), int(rd(f"{pol}/scaling_max_freq")))
+                except ValueError:
+                    continue
+                if rd(f"{pol}/scaling_min_freq") == str(value):
+                    continue
+            wr(f"{pol}/scaling_min_freq", value)
 
 
 class Hotkeys:
@@ -918,14 +1009,21 @@ class Daemon:
         log("stopped (fan at failsafe)")
         sys.exit(0)
 
-    def apply_profile(self, flash: bool = True) -> None:
+    def apply_profile(self, flash: bool = True) -> bool:
         p = self.st["profile"]
-        apply_cpu(p)
-        apply_gpu(p)
+        if os.path.exists(STANDBY_FLAG):
+            log(f"profile {p} deferred until standby exits")
+            return False
+        cpu_ok = apply_cpu(p)
+        gpu_ok = apply_gpu(p)
         self.games.done.clear()
+        if not (cpu_ok and gpu_ok):
+            log(f"profile {p} failed; check clock diagnostics")
+            return False
         if flash:
             self.leds.flash(PROFILE_RGB[p])
         log(f"profile {p}")
+        return True
 
     def action(self, name: str) -> None:
         if name == "profile-next":

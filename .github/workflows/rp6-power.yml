@@ -1,0 +1,41 @@
+name: RP6 power transitions
+on:
+  push:
+    paths:
+      - 'sm8650-overlay/usr/lib/konkr/konkrd'
+      - 'sm8650-overlay/usr/bin/konkrctl'
+      - 'external-and-mods/Decky/sm8650/konkr-control/main.py'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-standby'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-sleep'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-suspend'
+      - 'scripts/tests/test_rp6_power*.py'
+      - 'scripts/tests/test_rp6_power_delivery.py'
+      - 'scripts/install-rp6-power.sh'
+      - 'scripts/prepare-rp6-beta8-test.py'
+      - 'make-steamos-sm8650.sh'
+      - '.github/workflows/rp6-power.yml'
+  pull_request:
+    paths:
+      - 'sm8650-overlay/usr/lib/konkr/konkrd'
+      - 'sm8650-overlay/usr/bin/konkrctl'
+      - 'external-and-mods/Decky/sm8650/konkr-control/main.py'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-standby'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-sleep'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-suspend'
+      - 'scripts/tests/test_rp6_power*.py'
+      - 'scripts/tests/test_rp6_power_delivery.py'
+      - 'scripts/install-rp6-power.sh'
+      - 'scripts/prepare-rp6-beta8-test.py'
+      - 'make-steamos-sm8650.sh'
+      - '.github/workflows/rp6-power.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s scripts/tests -p 'test_rp6_power*.py' -v
+      - run: bash -n sm8650-overlay/usr/lib/konkr/konkr-sleep sm8650-overlay/usr/lib/konkr/konkr-suspend scripts/install-rp6-power.sh make-steamos-sm8650.sh
