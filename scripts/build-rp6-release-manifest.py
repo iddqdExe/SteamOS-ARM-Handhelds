@@ -91,9 +91,21 @@ def validate_recipe(recipe):
     for item in recipe['inputs']:
         if not item.get('id') or item['id'] in seen: raise ValueError('build input IDs must be unique')
         seen.add(item['id'])
-        url = item.get('url', '')
-        if not url.startswith('https://') or re.search(r'/(?:main|master|latest)(?:[/?#]|$)', url):
-            raise ValueError('moving or invalid build input URL')
+        kind = item.get('kind', 'download')
+        if kind == 'local-artifact':
+            if not re.fullmatch(r'[0-9a-f]{40}', item.get('source_sha', '')):
+                raise ValueError('local artifact source SHA is required')
+            name = item.get('artifact_name', '')
+            if not name or Path(name).name != name or name in ('.', '..'):
+                raise ValueError('local artifact name is required')
+            if item.get('url'): raise ValueError('local artifacts must not invent a download URL')
+        elif kind == 'download':
+            url = item.get('url', '')
+            if not url.startswith('https://') or re.search(r'/(?:main|master|latest)(?:[/?#]|$)', url):
+                raise ValueError('moving or invalid build input URL')
+        else: raise ValueError('unsupported build input kind')
+        path = Path(item['path'])
+        if path.is_symlink() or not path.is_file(): raise ValueError('input must be a regular file')
         if not re.fullmatch(r'[0-9a-f]{64}', item.get('sha256', '')): raise ValueError('input SHA256 is required')
         if digest(item['path']) != item['sha256']: raise ValueError(f'input checksum mismatch: {item["id"]}')
     transfers = recipe.get('transfers', [])
@@ -129,12 +141,14 @@ def create(repo, root, kernel, recipe, channel='beta-opt-in', allow_dirty=False)
     manifest = {'format': FORMAT, 'module': recipe['module'], 'tasks': recipe['tasks'], 'target': TARGET,
                 'channel': channel, 'decision': 'untested', 'source': source,
                 'donors': recipe['donors'], 'components': recipe['components'],
-                'inputs': [{key: item[key] for key in ('id', 'url', 'sha256')} for item in recipe['inputs']],
+                'inputs': [{key: item[key] for key in ('id', 'url', 'sha256', 'kind', 'source_sha', 'artifact_name')
+                            if key in item} for item in recipe['inputs']],
                 'kernel': boot, 'modules': modules, 'firmware': inventory(root / 'usr/lib/firmware'),
                 'patches': patches, 'runtime': runtime, 'transfers': recipe['transfers'],
                 'validation': recipe.get('validation', {}), 'rollback': recipe.get('rollback', {}),
                 'toolchain': {'python': platform.python_version(), 'architecture': platform.machine(),
                               **recipe.get('toolchain', {})}, 'evidence': {}}
+    if 'assembly' in recipe: manifest['assembly'] = recipe['assembly']
     for name, proof in recipe.get('evidence', {}).items():
         if digest(proof['path']) != proof['sha256']: raise ValueError(f'evidence checksum mismatch: {name}')
         manifest['evidence'][name] = {'sha256': proof['sha256'], 'name': Path(proof['path']).name}

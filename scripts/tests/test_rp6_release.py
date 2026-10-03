@@ -138,6 +138,34 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIn('checksum', result.stderr)
         self.assertFalse(self.output.exists())
 
+    def test_records_sealed_local_artifact_without_inventing_a_download_url(self):
+        item = self.data['inputs'][0]
+        item.pop('url')
+        item.update(kind='local-artifact', source_sha=self.git('rev-parse', 'HEAD'),
+                    artifact_name=self.download.name)
+        result = self.create()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = json.loads(self.output.read_text())['inputs'][0]
+        self.assertEqual(recorded['kind'], 'local-artifact')
+        self.assertEqual(recorded['source_sha'], item['source_sha'])
+        self.assertEqual(recorded['artifact_name'], self.download.name)
+        self.assertNotIn('path', recorded)
+        self.assertNotIn('url', recorded)
+
+    def test_local_artifact_requires_source_sha_and_regular_file(self):
+        item = self.data['inputs'][0]
+        item.pop('url'); item.update(kind='local-artifact', artifact_name=self.download.name)
+        result = self.create()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('source SHA', result.stderr)
+        item['source_sha'] = self.git('rev-parse', 'HEAD')
+        link = self.base / 'link.img'; link.symlink_to(self.download)
+        item['path'] = str(link)
+        result = self.create()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('regular', result.stderr)
+        self.assertFalse(self.output.exists())
+
     def test_rejects_kernel_without_matching_modules(self):
         (self.root / 'usr/lib/modules/7.0.14-fixture').rename(self.root / 'usr/lib/modules/other-release')
         result = self.create()
