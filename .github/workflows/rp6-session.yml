@@ -9,6 +9,7 @@ on:
       - 'steamos-overlay/usr/lib/systemd/user/steam.service.d/**'
       - 'sm8650-overlay/usr/src/konkr-focusfix/**'
       - 'sm8650-overlay/usr/lib/konkr/konkr-focusfix'
+      - 'sm8650-overlay/usr/lib/konkr/konkr-standby'
       - 'sm8650-overlay/usr/lib/systemd/system/plugin_loader.service'
       - 'external-and-mods/kernel-common/**'
       - 'external-and-mods/konkr-update/**'

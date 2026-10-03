@@ -1,10 +1,20 @@
 # GPL-2.0; adapted from hashtagbasit/f08eaa6, 2026-10-02.
 # Source before switch_root, after any pending update has been recovered.
 mount_etc_overlay() {
-    local root=${1:-/newroot} mounts=${2:-/proc/mounts} overlay
+    local root=${1:-/newroot} mounts=${2:-/proc/mounts} filesystems=${3:-/proc/filesystems} overlay
     overlay=$root/var/lib/overlays/etc
     [ -d "$overlay" ] || return 0
     grep -Fq " $root/etc " "$mounts" && return 0
+    # Imported RP6 kernels can have CONFIG_OVERLAY_FS=m. This tiny initramfs
+    # has no /sbin/modprobe, so kernel module autoload cannot work yet. Use the
+    # mounted root's kmod and matching modules before systemd is started.
+    if ! grep -qw overlay "$filesystems"; then
+        if ! chroot "$root" /usr/bin/modprobe overlay ||
+           ! grep -qw overlay "$filesystems"; then
+            echo 'Cannot load OverlayFS from the mounted root before systemd; boot stopped' >&2
+            return 1
+        fi
+    fi
     if ! mkdir -p "$overlay/upper" "$overlay/work" ||
        ! mount -t overlay overlay \
          -o "lowerdir=$root/etc,upperdir=$overlay/upper,workdir=$overlay/work" "$root/etc"; then
@@ -12,3 +22,11 @@ mount_etc_overlay() {
         return 1
     fi
 }
+
+# Keep a BOOT diagnostic when possible. `command exec` avoids BusyBox ash's
+# fatal error for a failed special-builtin redirection. A failed log open must
+# not prevent the real mount; the subshell also closes the extra FD afterwards.
+mount_etc_overlay_logged() (
+    if command exec 8> "$2"; then :; else exec 8>&2; fi
+    mount_etc_overlay "$1" "${3:-/proc/mounts}" "${4:-/proc/filesystems}" >&8 2>&1
+)

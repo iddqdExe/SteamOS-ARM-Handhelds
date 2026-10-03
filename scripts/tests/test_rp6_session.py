@@ -62,7 +62,8 @@ class MangoStartupTests(unittest.TestCase):
 
 
 class EarlyEtcTests(unittest.TestCase):
-    def run_mount(self, *, mounted=False, fail=False, overlay=True):
+    def run_mount(self, *, mounted=False, fail=False, overlay=True,
+                  modular=False, module_load_fails=False, log_unavailable=False):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp); root = base / 'root'; (root / 'etc').mkdir(parents=True)
             etc = root / 'var/lib/overlays/etc'
@@ -70,14 +71,31 @@ class EarlyEtcTests(unittest.TestCase):
                 (etc / 'upper').mkdir(parents=True)
                 (etc / 'upper/custom.conf').write_text('keep\n')
             mounts = base / 'mounts'; mounts.write_text(f'overlay {root}/etc overlay rw 0 0\n' if mounted else '')
+            filesystems = base / 'filesystems'
+            filesystems.write_text('nodev\toverlay\n' if not modular else 'nodev\ttmpfs\n')
             commands = base / 'commands'; commands.mkdir()
             log = base / 'mount.log'
-            (commands / 'mount').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$TEST_MOUNT_LOG"\nexit ' + ('1' if fail else '0') + '\n')
+            (commands / 'mount').write_text(
+                '#!/bin/sh\n'
+                'grep -qw overlay "$TEST_FILESYSTEMS" || { echo "unknown filesystem type overlay" >&2; exit 1; }\n'
+                'printf "%s\\n" "$*" >>"$TEST_MOUNT_LOG"\nexit ' + ('1' if fail else '0') + '\n')
             (commands / 'mount').chmod(0o755)
-            result = subprocess.run(['sh', '-c', '. "$1" && mount_etc_overlay "$2" "$3"',
-                                     'test', str(ETC), str(root), str(mounts)],
+            # The target kernel cannot be loaded into a unit-test host. Model
+            # only that external boundary; the real helper must make mount work.
+            (commands / 'chroot').write_text(
+                '#!/bin/sh\n'
+                '[ "$#" = 3 ] && [ "$1" = "$TEST_ROOT" ] && '
+                '[ "$2" = /usr/bin/modprobe ] && [ "$3" = overlay ] || exit 97\n' +
+                ('exit 1\n' if module_load_fails else
+                 'printf "nodev\\toverlay\\n" >>"$TEST_FILESYSTEMS"\n'))
+            (commands / 'chroot').chmod(0o755)
+            invocation = ('. "$1" && mount_etc_overlay_logged "$2" "$5" "$3" "$4"' if log_unavailable else
+                          '. "$1" && mount_etc_overlay "$2" "$3" "$4"')
+            result = subprocess.run(['sh', '-c', invocation,
+                                     'test', str(ETC), str(root), str(mounts), str(filesystems), str(base / 'absent/early-etc.log')],
                                     env={**os.environ, 'PATH': str(commands) + ':' + os.environ['PATH'],
-                                         'TEST_MOUNT_LOG': str(log)}, capture_output=True, text=True)
+                                         'TEST_MOUNT_LOG': str(log), 'TEST_ROOT': str(root),
+                                         'TEST_FILESYSTEMS': str(filesystems)}, capture_output=True, text=True)
             saved = (etc / 'upper/custom.conf').read_text() if overlay else None
             return result, log.read_text() if log.exists() else '', saved
 
@@ -106,8 +124,47 @@ class EarlyEtcTests(unittest.TestCase):
         self.assertIn('/etc overlay failed', result.stderr)
         self.assertEqual(saved, 'keep\n')
 
+    def test_modular_overlay_is_loaded_before_early_mount(self):
+        result, log, saved = self.run_mount(modular=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-t overlay', log)
+        self.assertEqual(saved, 'keep\n')
+
+    def test_module_load_failure_stops_boot_with_a_diagnostic(self):
+        result, log, saved = self.run_mount(modular=True, module_load_fails=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('load OverlayFS', result.stderr)
+        self.assertEqual(log, '')
+        self.assertEqual(saved, 'keep\n')
+
+    def test_builtin_overlay_does_not_need_a_module_loader(self):
+        result, log, _ = self.run_mount(module_load_fails=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-t overlay', log)
+
+    def test_unwritable_boot_log_does_not_stop_a_valid_overlay_mount(self):
+        result, log, saved = self.run_mount(modular=True, log_unavailable=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-t overlay', log)
+        self.assertEqual(saved, 'keep\n')
+
 
 class SessionDeliveryTests(unittest.TestCase):
+    def test_staged_delivery_replaces_stale_standby_with_executable_current_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            standby = root / 'usr/lib/konkr/konkr-standby'
+            standby.parent.mkdir(parents=True)
+            standby.write_text('stale standby payload\n')
+            standby.chmod(0o644)
+            for _ in range(2):
+                result = subprocess.run(['bash', str(REPO / 'scripts/install-rp6-session.sh'), str(root)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(standby.read_bytes(),
+                                 (REPO / 'sm8650-overlay/usr/lib/konkr/konkr-standby').read_bytes())
+                self.assertEqual(standby.stat().st_mode & 0o777, 0o755)
+
     def test_staged_delivery_is_idempotent_and_preserves_other_vulkan_layers(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
