@@ -1,6 +1,6 @@
 # UP-08: выпуск, обновление и откат
 
-Статус: первый этап инструментов готов; после принятия UP-01 пользователем 2026-10-04 выполняется подготовка согласованного образа и обновления. Весь UP-08 **не принят**. Целевая конфигурация — **Retroid Pocket 6 / SM8550 / 12 ГБ RAM / microSD**.
+Статус 2026-10-04: образ и пакет собраны; первое SSH-обновление и ручной snapshot rollback подтверждены на RP6. Повторная установка кандидата также подтверждена. Весь UP-08 **не принят**. Целевая конфигурация — **Retroid Pocket 6 / SM8550 / 12 ГБ RAM / microSD**.
 
 Первый этап 2026-10-02 использовал UP-01 `db3036e73d7ca298cd56dcf2ee28e4f296e7c431`, тогда ещё без аппаратного принятия. Продолжение 2026-10-04 включает принятую пользователем UP-01 `178b2dc276afe9e6e5170e8a3eece8dd9f3e8b93` через merge `d94894a3402a9c99a9a942ecd7ab7a7b94a31663`. UP-02 и незавершённые изменения питания основного checkout сюда не включены.
 
@@ -84,9 +84,9 @@ Updater сохраняет `/etc/konkrd.conf` в нижнем и верхнем 
 
 В Linux fixtures проверены повреждение payload до root switch, прерывание после реальной частичной замены `usr`, восстановление rootfs/KERNEL, сохранение `appmanifest_*.acf` и повторная очистка терминального `aborted`. Эти тесты не доказывают восстановление после физического отказа microSD или повреждения BOOT; аппаратный rollback остаётся отдельным испытанием.
 
-## Проверки и оставшаяся работа
+## Первый этап 2026-10-02: проверки и оставшаяся работа
 
-Локально: **99 tests** в ARM64 Linux без пропусков; macOS — **99 tests, 14 Linux-пропусков**. Bash syntax и `git diff --check` прошли. GitHub Actions не запускались. Результаты и red/green журналы: `../preparation/upstream-porting/UP-08/` относительно основного checkout.
+На первом этапе локально: **99 tests** в ARM64 Linux без пропусков; macOS — **99 tests, 14 Linux-пропусков**. Bash syntax и `git diff --check` прошли. GitHub Actions не запускались. Результаты и red/green журналы: `../preparation/upstream-porting/UP-08/` относительно основного checkout.
 
 Общие checkbox UP-08.1…UP-08.5 в плане остаются открытыми: ни один из них целиком этим первым этапом не закрыт. Далее нужны полный lock всех загрузок/toolchain, чистая сборка зафиксированного кандидата с обязательными input/session/power проверками, пакет обновления этого же комплекта, испытание свежей установки и обновления принятой базы на RP6, проверка восстановления карты и решение о включении в default. Образы и разделы устройства в этом этапе не изменялись.
 
@@ -109,3 +109,23 @@ Outputs: образ, пакет с `.sha256`, `.build-manifest.json`, `.release.
 Обновление существующей принятой системы можно установить через SSH. **Для первого UP-08 запускать `stage` проверенной новой копией `konkr-update.py` из этого кандидата**, предварительно сверив SHA256 updater и пакета. Старый updater базы UP-01 не проверяет новое поле `release` и не сохраняет `konkrd.conf`. Новый файл можно передать в HOME и вызвать с правами администратора без предварительной установки в `/usr`: `stage` сохраняет собственную копию в приватном recovery runtime, а новый updater устанавливается уже вместе с пакетом. `stage` меняет BOOT и создаёт pending transaction; подготовка пакета и `inspect` этих действий не выполняют.
 
 Проверка свежей установки требует записи отдельной карты. Пользовательские данные и настройки сохраняются в пределах контракта нового updater; отдельно установленный developer root helper после замены `/usr` восстанавливается по [RP6-DEVTOOLS.ru.md](RP6-DEVTOOLS.ru.md). Приёмка пользователя для UP-01 не переносится автоматически на обновление, свежую установку или откат UP-08.
+
+## Проверки продолжения 2026-10-04
+
+Зафиксированный build source: `201ea939973a191a7a687180b7fdabbba471f6ec`; последующие изменения этого документа не меняют байты кандидата. ARM64 Linux — **144 tests, 0 skips**; macOS — **144 tests, 27 Linux skips**. GitHub Actions не запускались. Pinned builder `sha256:4f53986876692fe70381c5f9915e912fcfd1d7d69da330fc0555bd7cf29bf4c4`, без сети.
+
+| Артефакт | SHA256 |
+|---|---|
+| `steamos-rp6-up08-20261004.img`, 16447963136 bytes | `668d6fea7c2295ec02346bec843411efc0f9b705f5af143b3499ece5c04589ed` |
+| `rp6-up08-20261004.tar.gz`, 4373171310 bytes | `659c33d8428f488c93d4ebb88e47dac9ffff4476cb343a8892d081323c964754` |
+| KERNEL / `7.0.14-edge-sm8550` | `526e213186ef1f5955810e5a47ef2671dd22d25a1585c5149df796d99a1ed394` |
+
+Локальный каталог результатов: `/Users/iddqd/Projects/steamos-arm/preparation/upstream-porting/UP-08/accepted-base-20261004/`. `device-attestation.json` фиксирует актуальные результаты отдельно от неизменяемого встроенного manifest. До hardware update независимая резервная копия проверена на RP6/Mac и восстановлена в отдельный Linux volume: 236582 стабильных записи совпали, 14 изменяемых Steam htmlcache records отдельно раскрыты. Копия включает затрагиваемую систему, BOOT и настройки; игровые файлы и полная карта в неё не входят.
+
+Первое обновление с принятого UP-01: transaction `48102251-ef07-49f1-909d-69431e40240f`, новый boot `3e0ea3ec-f869-47c8-94c5-943a6a14696e`, state committed. Kernel/updater/release payload совпали с пакетом; input maps, power/profile config, protected lower/upper/etc, Steam appmanifests и Decky settings сохранились. Raw metadata result выявил ровно две дополнительные debug service/link записи, создаваемые прежним initramfs; независимая проверка подтвердила полное совпадение с принятым UP-01 backup. Raw result сохранён, объяснение вынесено в `post-apply-assessment.json`. Два изменяемых Steam userdata cache/config файла после запуска Steam указаны отдельно.
+
+Ручной возврат проверен через supported `rollback-requested` recovery state, опубликованный под update lock после сверки полного snapshot; restore в работающем `/` не запускался. Rollback boot `847353f7-15f7-44a7-aa09-21e8bdeca12f`, state rolled-back. Все **236284** управляемые записи и их bytes/types/modes/UID/GID/xattrs/links точно совпали с physical pre-apply baseline; SHA256 inventory `569804e4c1cea1f9788daa26f83a0c7520f3aa1c7a79f93ac5a1c2ef81761010`. Все 10 capability files и отдельно Decky settings сохранены, вернулся предыдущий updater, UP08 marker отсутствует. Это ручной snapshot rollback; аппаратный power-cut, automatic failure recovery и восстановление всей карты этим не проверены.
+
+После проверки rollback обычным `stage` выполнена повторная установка UP-08: новая transaction `bf2ce07e-8e95-4bac-b52b-b5fc1348087d`, boot `33b39743-ed4a-4de1-8b49-659e79b6bb92`, state committed/no pending/no failure. Завершённая rolled-back transaction не включалась повторно. `post-restage-result.json` подтверждает полную сверку usr/opt bytes/metadata с кандидатом (с отдельно записанными 4 точными штатными boot adjustments), сохранность protected etc/input/profiles/appmanifests/Decky settings и 10 capabilities. Необъяснённых metadata/preservation differences нет. Сохранённая диагностика текущей загрузки обновлена и отдельно проверена: pass_system_checks.
+
+На всех трёх проверенных загрузках SSH system checks прошли: RP6 identity, early/etc overlay, InputPlumber, KONKR, Game Mode focusfix и единственный Decky loader. Физические кнопки/ориентация/Steam-QAM/звук/игры/standby остаются отдельной приёмкой. Пользователь подтвердил отсутствие запасной microSD: свежая установка не испытана, рабочую карту не перезаписывать. UP-08 остаётся beta-opt-in; default release и отметка полного принятия запрещены до незакрытых аппаратных gates. UP-02, UP-03 и незавершённые изменения питания не входят в кандидат.
