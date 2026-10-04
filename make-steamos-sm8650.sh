@@ -25,7 +25,10 @@ export SOC   # apply-overlays: 8 Gen 2-only files
 case "$SOC" in
   sm8650) _kdef="${WORKDIR}/kernel-release/current" ;;
   sm8550)
-    if [[ "${SM8550_KERNEL:-prebuilt}" == prebuilt ]]; then
+    # Resolve the same accepted recipe as the kernel builder.
+    source "${MOD}/kernel-sm8550/soc.env"
+    export SM8550_RECIPE SM8550_KERNEL
+    if [[ "$SM8550_KERNEL" == prebuilt ]]; then
       _kdef="${WORKDIR}/kernel-prebuilt/7.0.14-edge-sm8550"
     else
       _kdef="${WORKDIR}/kernel-sm8550/output/current"
@@ -90,7 +93,7 @@ Usage: $0 [options]
   --img PATH        Output image (default: ${IMG})
 
 Env: SOC (sm8650|sm8550) BOOT_MIB ROOT_MIB HOME_MIB STEAMOS_SM8650_IMG STEAMOS_ROOTFS
-     IMAGE_KERNEL_OUT (this image's kernel) KERNEL_OUT (kernels for the rootfs)
+     IMAGE_KERNEL_OUT (default: ${KOUT}) KERNEL_OUT (kernels for the rootfs)
      empty ROOT_MIB/HOME_MIB = auto (tight pack; home grows on first boot)
      RP6_RELEASE_RECIPE (UP-08 JSON recipe); RP6_RELEASE_CHANNEL (beta-opt-in|default)
      RP6_RELEASE_ALLOW_DIRTY=1 (record local changes, beta candidates only)

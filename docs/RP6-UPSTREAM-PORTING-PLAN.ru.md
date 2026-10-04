@@ -93,15 +93,17 @@
 
 **Результат:** собственный согласованный SM8550 kernel/modules/firmware, пригодный для следующих переносов.
 
+**Статус 2026-10-04:** UP-03 закрыт по запросу пользователя с приёмкой фактических проверок RP6; ядро 7.2.8 становится основным в `main`. Known GMU warning, неподтверждённый sleep/resume, отсутствие контролируемого A/B и отдельные CI/R2 physical delivery/rollback checks сохранены; gate готового бинарного release проверяется отдельно. Подробности: [RP6-UP-03.ru.md](RP6-UP-03.ru.md).
+
 **Донор:** существующий локальный рецепт и SteamOS ARM: [SD UHS-I `18667d…`][sd], [GPU queue priorities `1da337…`][gpu-priority], Wi-Fi часть [ath12k `3b01fc…`][wifi-touch].
 
 **Файлы:** `external-and-mods/kernel-sm8550/soc.env`, `external-and-mods/kernel-sm8550/build.sh`, `external-and-mods/kernel-common/build-gcc15.sh`, `external-and-mods/kernel-common/steamos.config`, `external-and-mods/kernel-sm8550/patches/`, его `dts/`, `scripts/apply-overlays.sh`, `make-steamos-sm8650.sh`.
 
-- [ ] **UP-03.1 — Воспроизводимый рецепт.** Зафиксировать ROCKNIX ref, Linux 7.2.8, GCC 15, config и порядок патчей; сравнить уже включённые исправления. Собирать в Linux окружении с подготовленными `WORK/ROCKNIX_DIR`; wrapper GCC 15 требует путей внутри своего mount и static BusyBox.
-- [ ] **UP-03.2 — SD.** Проверить donor снятие `sdhci-caps-mask` и реальные negotiated modes/ошибки карты. Исправление устраняет регрессию нового ядра; оно не означает обещанный рост относительно текущего 7.0.14, где SDR104 уже доступен.
-- [ ] **UP-03.3 — GPU/Wi-Fi.** Перенести исправление отображения GPU queue priorities и фактическую передачу ath12k scan priority. Проверить отсутствие эквивалента в выбранной базе; не переносить связанные изменения других SoC. Измерить QAM/UI под нагрузкой и reconnect RP6, а не использовать замеры Odin.
-- [ ] **UP-03.4 — Полный комплект.** Собрать KERNEL, initramfs, matching modules и firmware; прогнать UP-02/preflight. Пользовательское окружение оставить фиксированным для сравнения с предыдущим ядром: Mesa/FEX/rootfs одновременно не обновлять.
-- [ ] **UP-03.5 — Приёмка и доставка.** Проверить cold boot/reboot, microSD чтение/запись на тестовом файле, Wi-Fi, звук, ввод, Game Mode и игру. Выполнить UP-08. Прежний kernel/modules/initramfs комплект должен оставаться доступен для ручного восстановления.
+- [x] **UP-03.1 — Воспроизводимый рецепт.** Зафиксировать ROCKNIX ref, Linux 7.2.8, GCC 15, config и порядок патчей; сравнить уже включённые исправления. Собирать в Linux окружении с подготовленными `WORK/ROCKNIX_DIR`; wrapper GCC 15 требует путей внутри своего mount и static BusyBox.
+- [x] **UP-03.2 — SD.** Проверить donor снятие `sdhci-caps-mask` и реальные negotiated modes/ошибки карты. Исправление устраняет регрессию нового ядра; оно не означает обещанный рост относительно текущего 7.0.14, где SDR104 уже доступен.
+- [x] **UP-03.3 — GPU/Wi-Fi.** Перенести исправление отображения GPU queue priorities и фактическую передачу ath12k scan priority. Проверить отсутствие эквивалента в выбранной базе; не переносить связанные изменения других SoC. Измерить QAM/UI под нагрузкой и reconnect RP6, а не использовать замеры Odin.
+- [x] **UP-03.4 — Полный комплект.** Собрать KERNEL, initramfs, matching modules и firmware; прогнать UP-02/preflight. Пользовательское окружение оставить фиксированным для сравнения с предыдущим ядром: Mesa/FEX/rootfs одновременно не обновлять.
+- [ ] **UP-03.5 — Расширенная приёмка и доставка.** Scope модуля принят; этот широкий release checklist полностью не выполнен.  Проверить cold boot/reboot, microSD чтение/запись на тестовом файле, Wi-Fi, звук, ввод, Game Mode и игру. Выполнить UP-08. Прежний kernel/modules/initramfs комплект должен оставаться доступен для ручного восстановления.
 
 **Приёмка:** нет boot/storage/input regressions, версия modules совпадает с kernel, журнал не показывает новые ошибки SD/GMU/ath12k, QAM остаётся отзывчивым. Переход на kernel 7.2.8 не меняет режим сна по умолчанию автоматически.
 

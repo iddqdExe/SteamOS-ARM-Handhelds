@@ -1,0 +1,120 @@
+{
+  "format": "rp6-up03-public-acceptance-1",
+  "module": "UP-03",
+  "decision": "accepted",
+  "status": "closed",
+  "accepted_on": "2026-10-04",
+  "target": {
+    "model": "Retroid Pocket 6",
+    "soc": "SM8550",
+    "ram_gib": 12,
+    "media": "microSD"
+  },
+  "source_promotion": {
+    "branch": "main",
+    "primary_kernel": "7.2.8-sm8550-steamos",
+    "recipe": "7.2",
+    "image_kernel_default": "kernel-sm8550/output/current",
+    "authorization": "explicit user instruction to publish accepted UP-03 and make current kernel primary in main"
+  },
+  "runtime_path": "clean R1 installation plus verified firmware repair to R2 inventory and release marker",
+  "kernel": {
+    "bytes": 20246528,
+    "mode": "0755",
+    "payload_sha256": "cfa089d572f146dbf410a5634c897f174a4f051309ab1bb7fcc10e0955d510bf",
+    "ramdisk_sha256": "b5a2c96250612366ea272ffac6d9744aaf4b45aacd96aa7cfcb931ee3b558259",
+    "release": "7.2.8-sm8550-steamos",
+    "sha256": "bfb6bcafe3bec8bd1e1e28832d58e218157c4ee30e477f759cf0677d9e85d4cb"
+  },
+  "provenance": {
+    "assembly_source_sha": "392602eedfdab13826511bae7be4dead830cafc0",
+    "kernel_compile_source_sha": "044a84ec8b046aea502ed680f8f18df53cf6595a",
+    "rocknix_sha": "1ebff24f36501fb6493beb2bf83bf2604536d9aa",
+    "kernel_builder": {
+      "architecture": "aarch64",
+      "busybox_sha256": "7d93682be37cf6ed46699f6fff546b80bf133cf8ec342c2d04bc23387f78bc34",
+      "gcc_major": 15,
+      "image": "sha256:f95cc5a558d9968d11288ec09a6bf2258a1740993a881879027932c467936d24"
+    },
+    "assembly_provenance_unchanged_by_source_promotion": true
+  },
+  "accepted_checks": [
+    "running 7.2.8 kernel and all 280 matching modules",
+    "Game Mode/Desktop and user-confirmed controls/audio/touch",
+    "reboot and fullscreen menu cycles",
+    "DMC load without visible GPU/audio/input problems",
+    "DMC rumble",
+    "Bluetooth firmware load, pairing and audio after reboot",
+    "SDR104 and bounded HOME I/O integrity",
+    "10 Wi-Fi reconnect cycles on same AP"
+  ],
+  "device_evidence_summary": {
+    "matching_modules": 280,
+    "firmware_entries_matching_r2": 456,
+    "restored_firmware_entries": 315,
+    "sd_mode": "SDR104",
+    "sd_actual_clock_hz": 201999975,
+    "sd_width_bits": 4,
+    "sd_signal_volts": 1.8,
+    "bounded_home_integrity": "passed",
+    "wifi_same_ap_reconnect_cycles_passed": 10,
+    "wifi_new_mhi_pcie_sd_error_lines": 0,
+    "game": "DMC",
+    "game_audio_input_display": "passed-user-reported",
+    "rumble": "passed-user-reported",
+    "bluetooth_pairing_audio": "passed-user-reported"
+  },
+  "source_verification": {
+    "suite": "python3 -m unittest discover -s scripts/tests -v",
+    "environment": "native ARM64 Linux with prepared 7.2.8 kernel source and RP6 DTBs",
+    "tests": 186,
+    "failures": 0,
+    "skips": 0,
+    "log_sha256": "6112cac033b9e776f886edb9be1bcb35a695d77d14d528b877fd1c764b3b450f",
+    "test_runtime_seconds": 49.119,
+    "review": "no Critical or Important findings",
+    "scope": "source checks; separate from CI and device acceptance"
+  },
+  "artifacts": [
+    {
+      "name": "steamos-rp6-up03-20261004-r2.img",
+      "bytes": 16447963136,
+      "sha256": "3a7e978d0521ff169b32c24d0073eee68319c2c950530b4d94c8bf907080d73a",
+      "regular_file": true
+    },
+    {
+      "name": "rp6-up03-20261004-r2.tar.gz",
+      "bytes": 4367296950,
+      "sha256": "a894ded22efe8ca58b6ec26056c7ee7fd6446cac58a38d696c7019d6539c6364",
+      "regular_file": true
+    },
+    {
+      "name": "steamos-rp6-up03-20261004-r2.img.build-manifest.json",
+      "bytes": 157843,
+      "sha256": "00b7c00365df935b26a4c7dd477e1b1bcccc84d7c727f890db2248d0f5eac5ab",
+      "regular_file": true
+    },
+    {
+      "name": "steamos-rp6-up03-20261004-r2.img.root-inventory.json.gz",
+      "bytes": 8957887,
+      "sha256": "2f45cf8bc362d7390621b8b51318dee31711b79dfefa8793e92813b1c5c45310",
+      "regular_file": true
+    }
+  ],
+  "known_limitations": [
+    "One earlier GMU bandwidth-vote timeout/late-response pair; did not recur during DMC or fresh pre-sleep snapshot; cause unresolved.",
+    "Proposed three sleep/wake cycles and post-wake game have not been performed/reported; follow-up belongs to power/resume work.",
+    "Haptic brake warnings preexist in accepted UP01 logs; DMC rumble works.",
+    "Single SoundWire clock-stop warning after reboot retained; cause unresolved.",
+    "Faster OS/game loading and responsiveness are user observations; no controlled before/after percentage."
+  ],
+  "separate_checks_not_passed_at_acceptance": [
+    "CI",
+    "physical clean R2 image reinstallation",
+    "supported UP03 package update on device",
+    "physical rollback of the UP03 kernel bundle",
+    "controlled old/new measurements and broader game/resume matrix"
+  ],
+  "binary_release_publication": "not performed by source promotion",
+  "kernel_binary_reproducibility": "two builds had matching config/modules/firmware/DTBs; whole KERNEL bytes were not reproducible"
+}
