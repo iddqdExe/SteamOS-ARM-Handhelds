@@ -64,6 +64,15 @@ Those two Decky plugins were adapted in SteamOS-Ubuntu from
 
 ## Kernel and firmware
 
+UP-03 for RP6 uses ROCKNIX `20260901`
+(`1ebff24f36501fb6493beb2bf83bf2604536d9aa`) with Linux 7.2.8.
+The RP6 SDR104 adaptation comes from hashtagbasit/SteamOS-ARM-Handhelds
+`18667d70bc8ddf6a49f7eb64ee8cc64cc54842a0`; GPU priority mapping from
+`1da337d8ecbb59bc2a5c983060a1960241f83dc1`; Edouard Durand's ath12k scan
+priority patch from `3b01fcc60759b590a064387379b6858c2cbbb3cd`.
+Patch headers and donor authorship are retained. These transfers preserve
+the original GPL-2.0 kernel license. Hardware validation is scoped to RP6.
+
 Inherited from **SteamOS-Ubuntu**. See
 [`external-and-mods/kernel/CREDITS.md`](external-and-mods/kernel/CREDITS.md).
 
