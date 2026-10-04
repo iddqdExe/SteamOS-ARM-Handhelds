@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify staged UP-01 session, Decky and its matching BOOT artifact."""
 import argparse
+import hashlib
 import gzip
 import importlib.util
 import json
@@ -18,7 +19,9 @@ def load(name, path):
     return module
 
 
-def check(root, kernel, home=None):
+def check(root, kernel, home=None, *, standby_sha256=None):
+    if standby_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", standby_sha256):
+        raise ValueError("invalid accepted standby SHA256")
     home = home or root / 'home/steamos'
     files = {
         'usr/lib/steamos/gamescope-session': 'steamos-overlay',
@@ -33,7 +36,10 @@ def check(root, kernel, home=None):
     for rel, source in files.items():
         installed = root / rel
         if not installed.is_file(): raise ValueError(f'missing UP-01 session file: {rel}')
-        if installed.read_bytes() != (REPO / source / rel).read_bytes(): raise ValueError(f'UP-01 staged content differs: {rel}')
+        matched = (hashlib.sha256(installed.read_bytes()).hexdigest() == standby_sha256
+                   if rel == 'usr/lib/konkr/konkr-standby' and standby_sha256 is not None
+                   else installed.read_bytes() == (REPO / source / rel).read_bytes())
+        if not matched: raise ValueError(f'UP-01 staged content differs: {rel}')
         if rel in ('usr/lib/steamos/gamescope-session', 'usr/lib/steamos/wait-gamescope-env',
                    'usr/lib/konkr/konkr-focusfix', 'usr/lib/konkr/konkr-standby') and not installed.stat().st_mode & 0o111:
             raise ValueError(f'UP-01 file is not executable: {rel}')

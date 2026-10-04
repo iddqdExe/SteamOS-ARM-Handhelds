@@ -21,17 +21,24 @@ ap.add_argument('--soc', default='sm8650', choices=sorted(_updater.SOC_MODELS))
 ap.add_argument('--device', action='append', help='restrict the package to named models within --soc')
 ap.add_argument('--version', required=True)
 ap.add_argument('--output', required=True)
+ap.add_argument('--staging-dir', help='temporary staging parent; use rootfs for metadata-preserving hard links')
 ap.add_argument('--release-manifest', help='UP-08 build manifest; defaults to the embedded staged-rootfs manifest')
 a = ap.parse_args()
 root = Path(a.rootfs).resolve(); output = Path(a.output).resolve()
 home = Path(a.home).resolve() if a.home else root / 'home/steamos'
+staging_parent = Path(a.staging_dir).resolve() if a.staging_dir else output.parent
+copy_sources = [root / rel for rel in ('usr', 'opt', 'etc', 'var/lib/overlays/etc/upper')]
+copy_sources += [home / 'homebrew/plugins' / name for name in ('konkr-control', 'decky-lsfg-vk')]
+copy_sources.append(home / 'homebrew/services')
+if any(staging_parent == src.resolve() or src.resolve() in staging_parent.parents for src in copy_sources):
+    raise SystemExit('staging directory overlaps payload')
 devices = a.device or _updater.SOC_MODELS[a.soc]
 if any(device not in _updater.SOC_MODELS[a.soc] for device in devices): raise SystemExit('device does not belong to selected SoC')
 if output.exists() or output.with_name(output.name + '.part').exists(): raise SystemExit('output already exists')
 if not (root / 'usr/lib/liblsfg-vk-layer-arm64.so').is_file(): raise SystemExit('missing LSFG v2 ARM layer')
 if (root / 'usr/lib/steamos/wait-gamescope-env').is_file():
     subprocess.run(['python3', str(Path(__file__).with_name('check-rp6-session.py')), str(root), a.kernel, '--home', str(home)], check=True)
-with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=output.parent) as temp:
+with tempfile.TemporaryDirectory(prefix='konkr-package-', dir=staging_parent) as temp:
     stage = Path(temp)
     def copy(src, dst):
         dst.mkdir(parents=True, exist_ok=True)

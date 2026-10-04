@@ -101,3 +101,19 @@ class CandidateSafetyTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+class AcceptedBaseSessionTests(unittest.TestCase):
+    def test_old_standby_is_checked_against_explicit_baseline_hash(self):
+        import hashlib, importlib.util
+        spec=importlib.util.spec_from_file_location('base_session', REPO/'scripts/check-rp6-session.py')
+        tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(tool)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=CandidateSafetyTests().staged_root(Path(tmp));standby=root/'usr/lib/konkr/konkr-standby'
+            standby.write_text('accepted baseline standby');standby.chmod(0o755)
+            old=hashlib.sha256(standby.read_bytes()).hexdigest()
+            # The fixture deliberately lacks Decky/kernel; a verified old
+            # standby must pass the content gate and reach the missing artifact.
+            with self.assertRaises(FileNotFoundError):tool.check(root,root/'absent-KERNEL',standby_sha256=old)
+            standby.write_text('corrupt baseline standby')
+            with self.assertRaisesRegex(ValueError,'staged content differs'):
+                tool.check(root,root/'absent-KERNEL',standby_sha256=old)

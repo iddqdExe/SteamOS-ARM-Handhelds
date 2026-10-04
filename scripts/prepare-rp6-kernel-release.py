@@ -168,7 +168,8 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
     sealed.run('cp', '--reflink=auto', '--sparse=always', base, partial)
     with image_mounts(partial) as (boot_dir, root, home):
         session = load('rp6_kernel_session', 'scripts/check-rp6-session.py')
-        session.check(root, boot_dir / 'KERNEL', home / 'steamos')
+        baseline_standby = assembly['base_standby_sha256'] if power_runtime else None
+        session.check(root, boot_dir / 'KERNEL', home / 'steamos', standby_sha256=baseline_standby)
         if release.digest(boot_dir / 'KERNEL') != assembly.get('base_kernel_sha256'):
             raise ValueError('accepted base KERNEL SHA256 mismatch')
         before = sealed.tree_inventory(root); before_boot = sealed.tree_inventory(boot_dir)
@@ -209,7 +210,8 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
         home_inventory = sealed.tree_inventory(home / 'steamos')
         sealed.run('python3', REPO / 'scripts/build-update-package.py', '--rootfs', root,
                    '--home', home / 'steamos', '--kernel', target, '--soc', 'sm8550',
-                   '--device', 'Retroid Pocket 6', '--version', version, '--output', package)
+                   '--device', 'Retroid Pocket 6', '--version', version, '--output', package,
+                   '--staging-dir', root)
         metadata = sealed.verify_package_metadata(package, after, home_inventory)
     for name, region in regions.items():
         if sealed.region_digest(partial, *region) != protected[name]:
