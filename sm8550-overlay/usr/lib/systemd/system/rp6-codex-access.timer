@@ -1,0 +1,11 @@
+[Unit]
+Description=Recover RP6 SSH service after boot and wake
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=rp6-codex-access.service
+
+[Install]
+WantedBy=timers.target

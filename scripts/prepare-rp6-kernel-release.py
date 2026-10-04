@@ -45,6 +45,38 @@ POWER_LINKS = {
     'usr/lib/systemd/system/multi-user.target.wants/konkr-bootflags.service': '../konkr-bootflags.service',
     'usr/lib/systemd/system/sleep.target.wants/konkr-sleep.service': '../konkr-sleep.service',
 }
+ACCESS_FILES = {
+    'usr/lib/steamos-arm/rp6-access-restore.py': 'scripts/rp6-access-restore.py',
+    'usr/lib/systemd/system/rp6-codex-access.service': 'sm8550-overlay/usr/lib/systemd/system/rp6-codex-access.service',
+    'usr/lib/systemd/system/rp6-codex-access.timer': 'sm8550-overlay/usr/lib/systemd/system/rp6-codex-access.timer',
+}
+ACCESS_KEY = 'usr/share/steamos-arm/access/codex.pub'
+ACCESS_LINKS = {
+    'usr/lib/systemd/system/multi-user.target.wants/rp6-codex-access.service': '../rp6-codex-access.service',
+    'usr/lib/systemd/system/timers.target.wants/rp6-codex-access.timer': '../rp6-codex-access.timer',
+}
+ACCESS_DIRS = {'usr/share/steamos-arm/access', 'usr/lib/systemd/system/timers.target.wants'}
+
+
+def install_access_runtime(root, public_key):
+    access = load('rp6_access', 'scripts/rp6-access-restore.py')
+    key = access.validate_key(public_key.read_text())
+    for rel, source in ACCESS_FILES.items():
+        target = root / rel; target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink(): raise ValueError('access payload must be regular: ' + rel)
+        shutil.copyfile(REPO / source, target)
+        target.chmod(0o755 if rel.endswith('.py') else 0o644)
+        if target.stat().st_uid != 0 or release.digest(target) != release.digest(REPO / source):
+            raise ValueError('access payload verification failed: ' + rel)
+    target = root / ACCESS_KEY; target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink(): raise ValueError('access key must be regular')
+    target.write_text(key + '\n'); target.chmod(0o644)
+    if target.stat().st_uid != 0: raise ValueError('access key must be root owned')
+    for rel, link in ACCESS_LINKS.items():
+        target = root / rel; target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() or target.is_symlink():
+            if not target.is_symlink() or os.readlink(target) != link: raise ValueError('unexpected access enablement: ' + rel)
+        else: target.symlink_to(link)
 
 
 def install_power_runtime(root):
@@ -63,7 +95,7 @@ def install_power_runtime(root):
             raise ValueError('UP-04 unit enablement failed: ' + name)
 
 
-def assert_root_delta(before, after, *, power_runtime=False):
+def assert_root_delta(before, after, *, power_runtime=False, access_runtime=False):
     removed_firmware = {p for p in before.keys() - after.keys()
                         if p == 'usr/lib/firmware' or p.startswith('usr/lib/firmware/')}
     if removed_firmware:
@@ -72,6 +104,7 @@ def assert_root_delta(before, after, *, power_runtime=False):
     def allowed(path):
         return (path == 'usr/share/steamos-arm/release-manifest.json' or
                 (power_runtime and path in POWER_FILES | POWER_LINKS.keys()) or
+                (access_runtime and path in ACCESS_FILES.keys() | ACCESS_LINKS.keys() | ACCESS_DIRS | {ACCESS_KEY}) or
                 any(path == prefix or path.startswith(prefix + '/') for prefix in
                     ('usr/lib/modules', 'usr/lib/firmware')))
     unexpected = changed - {p for p in changed if allowed(p)}
@@ -153,6 +186,8 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
         raise ValueError('assembly source SHA mismatch')
     release.validate_recipe(recipe)
     inputs = {item['id']: item for item in recipe['inputs']}
+    access_runtime = bool(assembly.get('access_public_key_input'))
+    if access_runtime and not power_runtime: raise ValueError('access bootstrap is restricted to UP-04')
     base_item = inputs[assembly['base_input']]; base = Path(base_item['path'])
     sealed.validate_base(base, base_item['sha256'])
     bundle_item = inputs[assembly['bundle_inventory_input']]
@@ -169,11 +204,13 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
     with image_mounts(partial) as (boot_dir, root, home):
         session = load('rp6_kernel_session', 'scripts/check-rp6-session.py')
         baseline_standby = assembly['base_standby_sha256'] if power_runtime else None
-        session.check(root, boot_dir / 'KERNEL', home / 'steamos', standby_sha256=baseline_standby)
         if release.digest(boot_dir / 'KERNEL') != assembly.get('base_kernel_sha256'):
             raise ValueError('accepted base KERNEL SHA256 mismatch')
+        session.check(root, boot_dir / 'KERNEL', home / 'steamos', standby_sha256=baseline_standby,
+                      init_sha256=assembly.get('base_init_sha256'))
         before = sealed.tree_inventory(root); before_boot = sealed.tree_inventory(boot_dir)
         if power_runtime: install_power_runtime(root)
+        if access_runtime: install_access_runtime(root, Path(inputs[assembly['access_public_key_input']]['path']))
         replace_directory(kernel_dir / 'modules', root / 'usr/lib/modules')
         # The kernel bundle supplies GPU/Wi-Fi blobs, not a complete distro
         # firmware tree. Retain accepted Bluetooth and other firmware.
@@ -201,7 +238,7 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
         marker = root / 'usr/share/steamos-arm/release-manifest.json'
         if marker.is_symlink(): raise ValueError('release marker must be regular')
         shutil.copyfile(manifest_path, marker); marker.chmod(0o644)
-        after = sealed.tree_inventory(root); delta = assert_root_delta(before, after, power_runtime=power_runtime)
+        after = sealed.tree_inventory(root); delta = assert_root_delta(before, after, power_runtime=power_runtime, access_runtime=access_runtime)
         boot_delta = assert_boot_delta(before_boot, sealed.tree_inventory(boot_dir))
         inventory_path = image.with_name(image.name + '.root-inventory.json.gz')
         with inventory_path.open('xb') as handle:

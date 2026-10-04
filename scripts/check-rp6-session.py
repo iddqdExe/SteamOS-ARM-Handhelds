@@ -19,7 +19,30 @@ def load(name, path):
     return module
 
 
-def check(root, kernel, home=None, *, standby_sha256=None):
+def check_initramfs(raw, *, init_sha256=None):
+    if init_sha256 is not None and not re.fullmatch(r'[0-9a-f]{64}', init_sha256):
+        raise ValueError('invalid accepted init SHA256')
+    repacker = load('up01_repack', REPO / 'scripts/repack-rp6-initramfs.py')
+    entries, position = None, 0
+    while True:
+        position = raw.find(b'070701', position)
+        if position < 0: break
+        try:
+            parsed = repacker.read_cpio(raw[position:])
+            found = {name.removeprefix('./'): data for name, _, data in parsed}
+            if 'init' in found: entries = found; break
+        except (ValueError, UnicodeError): pass
+        position += 6
+    if entries is None: raise ValueError('BOOT has no readable initramfs')
+    for name in ('init', 'mount-etc-overlay', 'konkr-update-recover'):
+        expected = (REPO / 'external-and-mods/kernel-common/initramfs' / name).read_bytes()
+        matched = (hashlib.sha256(entries[name]).hexdigest() == init_sha256
+                   if name == 'init' and init_sha256 is not None
+                   else entries.get(name) == expected)
+        if not matched: raise ValueError(f'BOOT lacks matching UP-01 {name}; rebuild/repack the real initramfs')
+
+
+def check(root, kernel, home=None, *, standby_sha256=None, init_sha256=None):
     if standby_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", standby_sha256):
         raise ValueError("invalid accepted standby SHA256")
     home = home or root / 'home/steamos'
@@ -66,22 +89,7 @@ def check(root, kernel, home=None, *, standby_sha256=None):
     payload = zlib.decompressobj(31).decompress(image.kernel)
     release = re.search(rb'Linux version (\S+)', payload)
     if not release or not (root / 'usr/lib/modules' / release[1].decode()).is_dir(): raise ValueError('BOOT kernel/modules mismatch')
-    repacker = load('up01_repack', REPO / 'scripts/repack-rp6-initramfs.py')
-    raw = boot.initramfs_bytes(image)
-    entries, position = None, 0
-    while True:
-        position = raw.find(b'070701', position)
-        if position < 0: break
-        try:
-            parsed = repacker.read_cpio(raw[position:])
-            found = {name.removeprefix('./'): data for name, _, data in parsed}
-            if 'init' in found: entries = found; break
-        except (ValueError, UnicodeError): pass
-        position += 6
-    if entries is None: raise ValueError('BOOT has no readable initramfs')
-    for name in ('init', 'mount-etc-overlay', 'konkr-update-recover'):
-        expected = (REPO / 'external-and-mods/kernel-common/initramfs' / name).read_bytes()
-        if entries.get(name) != expected: raise ValueError(f'BOOT lacks matching UP-01 {name}; rebuild/repack the real initramfs')
+    check_initramfs(boot.initramfs_bytes(image), init_sha256=init_sha256)
     return {'module': 'UP-01', 'kernel_release': release[1].decode(), 'decky_version': decky['version'],
             'session_delivery': 'passed', 'standby_delivery': 'passed',
             'boot_initramfs_delivery': 'passed', 'device': 'untested'}

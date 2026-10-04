@@ -103,6 +103,28 @@ class CandidateSafetyTests(unittest.TestCase):
 if __name__ == '__main__': unittest.main()
 
 class AcceptedBaseSessionTests(unittest.TestCase):
+    def test_only_explicit_accepted_init_hash_allows_old_base(self):
+        import hashlib, importlib.util
+        spec = importlib.util.spec_from_file_location('init_session', REPO / 'scripts/check-rp6-session.py')
+        tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)
+        repacker = tool.load('test_repacker', REPO / 'scripts/repack-rp6-initramfs.py')
+        def fixture(init, other=None):
+            contents = {'init': init, **{name: (REPO / 'external-and-mods/kernel-common/initramfs' / name).read_bytes()
+                                      for name in ('mount-etc-overlay', 'konkr-update-recover')}}
+            if other: contents[other] = b'corrupt'
+            return repacker.write_cpio([(name, [i, 0o100755, 0, 0, 1, 0, len(data), 0, 0, 0, 0, len(name)+1, 0], data)
+                                       for i, (name, data) in enumerate(contents.items(), 1)])
+        accepted = b'accepted old init'; digest = hashlib.sha256(accepted).hexdigest()
+        tool.check_initramfs(fixture(accepted), init_sha256=digest)
+        with self.assertRaisesRegex(ValueError, 'matching UP-01 init'):
+            tool.check_initramfs(fixture(accepted))
+        with self.assertRaisesRegex(ValueError, 'matching UP-01 init'):
+            tool.check_initramfs(fixture(b'corrupt'), init_sha256=digest)
+        with self.assertRaisesRegex(ValueError, 'matching UP-01 mount-etc-overlay'):
+            tool.check_initramfs(fixture(accepted, 'mount-etc-overlay'), init_sha256=digest)
+        with self.assertRaisesRegex(ValueError, 'invalid accepted init'):
+            tool.check_initramfs(fixture(accepted), init_sha256='bogus')
+
     def test_old_standby_is_checked_against_explicit_baseline_hash(self):
         import hashlib, importlib.util
         spec=importlib.util.spec_from_file_location('base_session', REPO/'scripts/check-rp6-session.py')

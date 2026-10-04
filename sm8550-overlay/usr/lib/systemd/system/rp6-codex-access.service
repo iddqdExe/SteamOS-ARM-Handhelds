@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore provisioned RP6 SSH access
+After=local-fs.target NetworkManager.service
+RequiresMountsFor=/home/steamos
+ConditionPathExists=/usr/share/steamos-arm/access/codex.pub
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/lib/steamos-arm/rp6-access-restore.py
+TimeoutStartSec=90
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

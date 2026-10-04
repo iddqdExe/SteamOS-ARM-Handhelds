@@ -56,6 +56,13 @@ class KernelReleasePolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'userspace'):
                 self.tool.assert_root_delta({}, {forbidden:{'kind':'file'}}, power_runtime=True)
 
+    def test_access_payload_does_not_allow_other_keys_or_system_settings(self):
+        for allowed in ('usr/share/steamos-arm/access/codex.pub', 'usr/lib/steamos-arm/rp6-access-restore.py'):
+            self.assertEqual(self.tool.assert_root_delta({}, {allowed: {'kind': 'file'}}, access_runtime=True), [allowed])
+        for forbidden in ('home/steamos/.ssh/authorized_keys', 'etc/ssh/sshd_config', 'usr/share/steamos-arm/access/other.pub'):
+            with self.assertRaisesRegex(ValueError, 'userspace'):
+                self.tool.assert_root_delta({}, {forbidden: {'kind': 'file'}}, access_runtime=True)
+
     def test_late_failure_leaves_no_published_package(self):
         with tempfile.TemporaryDirectory() as tmp:
             final = Path(tmp) / 'candidate.tar.gz'
