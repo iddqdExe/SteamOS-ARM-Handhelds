@@ -22,6 +22,10 @@ while [ "$i" -lt 10 ]; do
     echo "=== pass $i  uptime $(cat /proc/uptime)"
     cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0'; echo
     uname -a
+    echo "--- suspend diagnostics"
+    cat /sys/power/mem_sleep /sys/power/pm_wakeup_irq /sys/power/suspend_stats/* 2>/dev/null
+    [ ! -x /usr/lib/konkr/konkr-sleep-state ] || /usr/lib/konkr/konkr-sleep-state diagnose
+    echo "--- sleep reports"; journalctl -b --no-pager -g 's2idle report|standby report|PM: suspend|PM: resume' -n 80
     echo "--- failed units"; systemctl --failed --no-pager
     echo "--- sessions"; loginctl list-sessions --no-pager
     echo "--- drm"; for c in /sys/class/drm/card*-*; do echo "$c $(cat $c/status 2>/dev/null) $(head -1 $c/modes 2>/dev/null)"; done

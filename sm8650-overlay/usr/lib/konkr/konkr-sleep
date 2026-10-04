@@ -17,6 +17,7 @@ set -u
 
 TOUCH_DRV=/sys/bus/i2c/drivers/chipone-tddi
 WIFI_MODS=(ath12k_wifi7 ath12k)
+STANDBY_WIFI_STATE=/run/konkr-standby-wifi
 UID_STEAM=1000
 
 log() { echo "konkr-sleep: $*"; }
@@ -25,22 +26,31 @@ as_user() {
   local user
   user=$(id -nu "$UID_STEAM" 2>/dev/null) || return 0
   [[ -S /run/user/$UID_STEAM/pulse/native ]] || return 0
-  timeout 3 runuser -u "$user" -- env XDG_RUNTIME_DIR=/run/user/$UID_STEAM "$@" 2>/dev/null
+  timeout --foreground 3 runuser -u "$user" -- env XDG_RUNTIME_DIR=/run/user/$UID_STEAM "$@" 2>/dev/null
 }
 
-audio() {  # audio 1 = suspend, 0 = resume
-  local kind name
+audio() {  # audio 1 = suspend, 0 = resume; attempt all outputs on failure
+  local kind name entries status=0
   for kind in sinks sources; do
-    as_user pactl list short "$kind" | while read -r _ name _; do
-      [[ $name == *.monitor ]] && continue
-      as_user pactl "suspend-${kind%s}" "$name" "$1"
-    done
+    if ! entries=$(as_user pactl list short "$kind"); then
+      log "ERROR: cannot list audio $kind" >&2
+      status=1
+      continue
+    fi
+    while read -r _ name _; do
+      [[ -z $name || $name == *.monitor ]] && continue
+      if ! as_user pactl "suspend-${kind%s}" "$name" "$1"; then
+        log "ERROR: cannot set audio $kind $name suspend=$1" >&2
+        status=1
+      fi
+    done <<< "$entries"
   done
+  return "$status"
 }
 
 gamescope_screen() {  # 1 = panel off (DPMS, not just backlight), 0 = on
   [[ -S /run/user/$UID_STEAM/gamescope-0 ]] || return 0
-  timeout 3 runuser -u "$(id -nu "$UID_STEAM")" -- env XDG_RUNTIME_DIR=/run/user/$UID_STEAM \
+  timeout --foreground 3 runuser -u "$(id -nu "$UID_STEAM")" -- env XDG_RUNTIME_DIR=/run/user/$UID_STEAM \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-0 gamescopectl drm_sleep_internal_screen "$1" >/dev/null 2>&1
 }
 
@@ -70,16 +80,45 @@ touch_off() {
   echo "$n"
 }
 
-pre() {
-  local n
-  audio 1
-  wake_sources
-  n=$(touch_off)
-  if [[ -d /sys/module/${WIFI_MODS[0]} ]]; then
-    timeout 15 modprobe -r "${WIFI_MODS[@]}" || log "ath12k unload failed"
+# Record the actual loaded modules before attempting an unload. The shared
+# helper must not load Pocket FIT's Wi-Fi module on a board that lacked it.
+# Keep this record on failure so standby-post can retry recovery.
+standby_wifi_off() {
+  local module loaded=()
+  [[ ! -e $STANDBY_WIFI_STATE ]] || { log "ERROR: pending Wi-Fi recovery" >&2; return 1; }
+  [[ -z ${KONKR_STANDBY_KEEP_WIFI:-} ]] || return 0
+  for module in "${WIFI_MODS[@]}"; do
+    [[ ! -d /sys/module/$module ]] || loaded+=("$module")
+  done
+  [[ ${#loaded[@]} -gt 0 ]] || return 0
+  (umask 077; set -o noclobber; printf '%s\n' "${loaded[@]}" > "$STANDBY_WIFI_STATE") || return 1
+  timeout --foreground 15 modprobe -r "${loaded[@]}" || { log "ERROR: Wi-Fi unload failed" >&2; return 1; }
+}
+
+standby_wifi_on() {
+  local module record status=0 modules=()
+  [[ -e $STANDBY_WIFI_STATE ]] || return 0
+  if ! record=$(cat "$STANDBY_WIFI_STATE"); then
+    log "ERROR: cannot read Wi-Fi recovery record" >&2
+    return 1
   fi
-  sync
-  log "pre: audio suspended, touch unbound=$n, wifi=$([[ -d /sys/module/${WIFI_MODS[0]} ]] && echo loaded || echo unloaded)"
+  # Validate the complete record before loading anything. A partial/empty
+  # write is not proof that no recovery is needed; leave it for diagnosis.
+  while IFS= read -r module; do
+    case "$module" in
+      ath12k_wifi7|ath12k) modules+=("$module") ;;
+      *) log "ERROR: invalid Wi-Fi recovery record" >&2; return 1 ;;
+    esac
+  done <<< "$record"
+  for module in "${modules[@]}"; do
+    modprobe "$module" || { log "ERROR: Wi-Fi reload failed: $module" >&2; status=1; }
+  done
+  [[ $status == 0 ]] || return 1
+  rm -f "$STANDBY_WIFI_STATE"
+}
+
+pre() {
+  /usr/lib/konkr/konkr-sleep-state pre
 }
 
 touch_devices() {  # chipone panels on any I2C bus, bound or not
@@ -100,35 +139,28 @@ touch_on() {
 }
 
 post() {
-  touch_on
-  if [[ ! -d /sys/module/${WIFI_MODS[0]} ]]; then
-    modprobe "${WIFI_MODS[0]}" || log "ath12k reload failed"
-  fi
-  audio 0
-  # konkrd re-applies profile clocks/LEDs on SIGHUP
-  systemctl kill -s HUP konkrd.service >/dev/null 2>&1
-  log "post: restored"
+  /usr/lib/konkr/konkr-sleep-state post
 }
 
 case "${1:-}" in
-  pre) pre ;;
-  post) post ;;
+  pre) pre || exit 1 ;;
+  post) post || exit 1 ;;
+  audio-off) audio 1 || exit 1 ;;
+  audio-on) audio 0 || exit 1 ;;
   # konkr-standby (no kernel suspend): quiet audio + touch, keep Wi-Fi
   standby-pre)
-    audio 1
-    gamescope_screen 1
+    audio 1 || exit 1
+    gamescope_screen 1 || { log "ERROR: panel off failed" >&2; exit 1; }
     # KONKR_STANDBY_KEEP_WIFI=1: testing over SSH (wake with SIGUSR1)
-    [[ -z ${KONKR_STANDBY_KEEP_WIFI:-} && -d /sys/module/${WIFI_MODS[0]} ]] \
-      && timeout 15 modprobe -r "${WIFI_MODS[@]}"
+    standby_wifi_off || exit 1
     # No touch unbind here: rebinding after a long standby left the chipone
     # panel in a ghost-touch storm (~4700 events/s) that crash-looped gamescope.
     log "standby: prepared" ;;
   # Resume order (konkr-standby): standby-audio-on while the apps are still
   # frozen (PipeWire kept running), then thaw, standby-screen-on, standby-post.
-  standby-audio-on) audio 0 ;;
-  standby-post)
-    [[ -d /sys/module/${WIFI_MODS[0]} ]] || modprobe "${WIFI_MODS[0]}" ;;
-  standby-screen-on) gamescope_screen 0 ;;
+  standby-audio-on) audio 0 || exit 1 ;;
+  standby-post) standby_wifi_on || exit 1 ;;
+  standby-screen-on) gamescope_screen 0 || { log "ERROR: panel on failed" >&2; exit 1; } ;;
   *) echo "usage: konkr-sleep pre|post|standby-pre|standby-audio-on|standby-post|standby-screen-on" >&2; exit 2 ;;
 esac
 exit 0

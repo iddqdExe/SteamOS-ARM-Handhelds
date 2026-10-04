@@ -49,6 +49,13 @@ class KernelReleasePolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'BOOT'):
             self.tool.assert_boot_delta(before, after)
 
+    def test_power_runtime_allows_only_explicit_payload(self):
+        path='usr/lib/konkr/konkr-sleep-state'
+        self.assertEqual(self.tool.assert_root_delta({}, {path: {'kind':'file'}}, power_runtime=True), [path])
+        for forbidden in ('usr/lib/konkr/konkrd','usr/bin/gamescope','etc/konkrd.conf','usr/lib/systemd/system/arbitrary.service'):
+            with self.assertRaisesRegex(ValueError,'userspace'):
+                self.tool.assert_root_delta({}, {forbidden:{'kind':'file'}}, power_runtime=True)
+
     def test_late_failure_leaves_no_published_package(self):
         with tempfile.TemporaryDirectory() as tmp:
             final = Path(tmp) / 'candidate.tar.gz'

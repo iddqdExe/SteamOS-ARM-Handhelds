@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""konkr-standby — safe "sleep" for the KONKR Pocket FIT.
+"""konkr-standby — software standby, shared with RP6 / SM8550.
 
 Kernel suspend (s2idle and deep) does not reliably resume on the 7.1.2 kernel:
 the device looked powered off and needed a forced restart. Steam's Sleep goes
@@ -14,19 +14,21 @@ this instead. It:
     running (idle, outputs suspended): frozen along with the apps, PipeWire
     woke hours out of date and audio lagged and crackled for minutes,
   - turns the panel backlight and the LEDs off,
-  - takes the big cores offline, drops the little ones to their lowest clock
-    and caps the GPU,
+  - drops CPU policy clocks to their minimum; SM8550 skips CPU hotplug and
+    GPU clamping to preserve its existing resume workaround,
   - blocks until the power button is pressed again (or SIGUSR1; for testing
     over SSH run it with KONKR_STANDBY_KEEP_WIFI=1), then restores it all: CPUs and audio first,
     then the apps, then the screen.
 
 Steam sees a normal suspend/resume cycle (PrepareForSleep false → true →
-false). Nothing enters kernel suspend, so there is nothing to fail to wake.
+false). Nothing enters kernel suspend. This does not prove reliable wake-up
+or low battery drain on RP6; those require hardware measurements.
 """
 from __future__ import annotations
 
 import glob
 import os
+from pathlib import Path
 import pwd
 import select
 import signal
@@ -47,12 +49,11 @@ def rd(p: str, d: str = "") -> str:
         return d
 
 
-def wr(p: str, v) -> None:
-    try:
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(str(v))
-    except OSError:
-        pass
+def wr(p: str, v) -> bool:
+    ok = wr_ok(p, v)
+    if not ok:
+        log(f"ERROR: cannot write {p}={v}")
+    return ok
 
 
 def wr_ok(p: str, v) -> bool:
@@ -64,13 +65,40 @@ def wr_ok(p: str, v) -> bool:
         return False
 
 
+class StandbyError(Exception):
+    """A transition failed; restore every operation already attempted."""
+
+
+def save_write(saved: dict[str, str], path: str, value) -> None:
+    previous = rd(path)
+    if not previous or str(value) == "":
+        raise StandbyError(f"cannot snapshot or determine target for {path}")
+    # Save before writing: a failed write may still have changed the device.
+    saved[path] = previous
+    if not wr(path, value):
+        raise StandbyError(f"cannot apply standby setting for {path}")
+
+
 def run(*cmd: str) -> int:
     import subprocess
+    process = None
     try:
-        return subprocess.run(cmd, check=False, timeout=20,
-                              stdout=subprocess.DEVNULL).returncode
+        # The helper and its foreground children share a private group.
+        # konkr-sleep uses timeout --foreground to preserve this boundary.
+        process = subprocess.Popen(cmd, start_new_session=True,
+                                   stdout=subprocess.DEVNULL)
+        return process.wait(timeout=20)
     except (OSError, subprocess.TimeoutExpired):
         return 1
+    finally:
+        if process is not None:
+            # Killing only the shell lets pactl/modprobe finish AFTER restore.
+            # Also clean up descendants if the helper exited first.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
 
 
 def big_cpus() -> list[int]:
@@ -115,34 +143,6 @@ def log(msg: str) -> None:
     print(f"konkr-standby: {msg}", flush=True)
 
 
-def restore_brightness(path: str, value: str) -> bool:
-    # gamescopectl acknowledges the request before the panel has unblanked.
-    # RP6 DCS brightness writes during that gap fail with EPROTO and leave
-    # the physical display black, even though sysfs caches the new value.
-    # Its unrelated PWM backlight stays bl_power=4 in healthy Game Mode.
-    panel = os.path.dirname(path)
-    if (os.path.basename(panel) != "ae94000.dsi.0" or
-            rd("/sys/firmware/devicetree/base/model").rstrip("\0") != "Retroid Pocket 6"):
-        wr(path, value)
-        return True
-    start = time.monotonic()
-    deadline = start + 3.0
-    while rd(f"{panel}/bl_power") != "0":
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            log("RP6 DSI panel did not unblank; brightness restore failed")
-            return False
-        time.sleep(min(0.05, remaining))
-    try:
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(value)
-    except OSError as exc:
-        log(f"RP6 DSI brightness restore failed: {exc}")
-        return False
-    log(f"RP6 DSI brightness restored after {time.monotonic() - start:.2f}s")
-    return True
-
-
 def game_pids() -> list[int]:
     children: dict[int, list[int]] = {}
     roots = []
@@ -174,6 +174,40 @@ def power_key_fd() -> int | None:
         if rd(f"{e}/device/name") == "pmic_pwrkey":
             return os.open(f"/dev/input/{os.path.basename(e)}", os.O_RDONLY)
     return None
+
+
+def backlight_targets() -> list[str]:
+    # Keep UP-03's accepted 7.2.8 panel endpoints and readiness-aware restore.
+    # The older module2 PWM-only rule predates this panel driver.
+    return sorted(glob.glob('/sys/class/backlight/*'))
+
+
+def restore_brightness(path: str, value: str) -> bool:
+    # gamescopectl acknowledges the request before the panel has unblanked.
+    # RP6 DCS brightness writes during that gap fail with EPROTO and leave
+    # the physical display black, even though sysfs caches the new value.
+    # Its unrelated PWM backlight stays bl_power=4 in healthy Game Mode.
+    panel = os.path.dirname(path)
+    if (os.path.basename(panel) != "ae94000.dsi.0" or
+            rd("/sys/firmware/devicetree/base/model").rstrip("\0") != "Retroid Pocket 6"):
+        return wr(path, value)
+    start = time.monotonic()
+    deadline = start + 3.0
+    while rd(f"{panel}/bl_power") != "0":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            log("RP6 DSI panel did not unblank; brightness restore failed")
+            return False
+        time.sleep(min(0.05, remaining))
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(value)
+    except OSError as exc:
+        log(f"RP6 DSI brightness restore failed: {exc}")
+        return False
+    log(f"RP6 DSI brightness restored after {time.monotonic() - start:.2f}s")
+    return True
+
 
 
 # Keep audio and D-Bus running while freezing the graphical user.
@@ -219,7 +253,7 @@ def freeze_targets() -> list[str]:
 
 def set_frozen(cgroups: list[str], frozen: bool) -> list[str]:
     """Write cgroup.freeze; returns the cgroups that took it."""
-    done = [cg for cg in cgroups if wr_ok(f"{cg}/cgroup.freeze", 1 if frozen else 0)]
+    done = [cg for cg in cgroups if wr(f"{cg}/cgroup.freeze", 1 if frozen else 0)]
     if frozen:
         end = time.monotonic() + 2.0              # let tasks reach the freezer
         while time.monotonic() < end and any(
@@ -240,6 +274,8 @@ def wait_power_press(fd: int) -> None:
             log("wake requested (SIGUSR1)")
             return
         data = os.read(fd, EV.size * 64)
+        if not data:
+            raise OSError("power key device disconnected")
         for off in range(0, len(data) - EV.size + 1, EV.size):
             _s, _u, t, code, val = EV.unpack_from(data, off)
             if t == EV_KEY and code == KEY_POWER:
@@ -250,18 +286,57 @@ def wait_power_press(fd: int) -> None:
                     return
 
 
+# The power key is read directly here before InputPlumber is frozen.
+FREEZE_SYSTEM = ['/sys/fs/cgroup/system.slice/inputplumber.service']
+
+
+def standby_snapshot():
+    import importlib.machinery, importlib.util
+    loader = importlib.machinery.SourceFileLoader('konkr_sleep_report',
+        str(Path(__file__).with_name('konkr-sleep-state')))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    report = importlib.util.module_from_spec(spec)
+    loader.exec_module(report)
+    return report, time.clock_gettime(time.CLOCK_BOOTTIME), report.battery_now(), report.irq_counts()
+
+
+def standby_report(start):
+    report, t0, battery, irqs = start
+    seconds = max(0, time.clock_gettime(time.CLOCK_BOOTTIME) - t0)
+    top = sorted(((n - irqs.get(k, n), k) for k, n in report.irq_counts().items()), reverse=True)[:6]
+    log('standby report: ' + report.drain_report(seconds, battery, report.battery_now()) + '; irq delta ' + str(top))
+
+
 def main() -> int:
     fd = power_key_fd()
     if fd is None:
         log("no power key device; not entering standby")
         return 1
-    open(FLAG, "w").close()
     saved: dict[str, str] = {}
     paused: list[int] = []
     offlined: list[int] = []
     frozen: list[str] = []
-    display_restored = True
+    status = 0
+    prepared = False
+    handlers = {}
+    termination = None
+
+    def interrupted(signum, _frame):
+        nonlocal status, termination
+        # Defer interruption across subprocess creation: raising between
+        # spawning a helper and recording its PID would lose its cleanup.
+        status, termination = 1, signum
+        os.write(WAKE_W, b"x")
+
+    def check_termination():
+        if termination is not None:
+            raise StandbyError(f"interrupted by signal {termination}")
+
     try:
+        for sig, handler in ((signal.SIGUSR1, lambda *_: os.write(WAKE_W, b"x")),
+                             (signal.SIGTERM, interrupted), (signal.SIGINT, interrupted)):
+            handlers[sig] = signal.signal(sig, handler)
+        open(FLAG, "w").close()
         # Drain the press that triggered sleep, so its release is not the wake.
         time.sleep(0.6)
         os.set_blocking(fd, False)
@@ -271,80 +346,127 @@ def main() -> int:
         except BlockingIOError:
             pass
         os.set_blocking(fd, True)
+        check_termination()
 
-        signal.signal(signal.SIGUSR1, lambda *_: os.write(WAKE_W, b"x"))
         for pid in game_pids():
             try:
-                os.kill(pid, signal.SIGSTOP)
+                # Track before sending: SIGTERM may arrive immediately after
+                # SIGSTOP, before the next Python statement runs.
                 paused.append(pid)
+                os.kill(pid, signal.SIGSTOP)
             except OSError:
                 pass
-        for bl in glob.glob("/sys/class/backlight/*"):
-            saved[f"{bl}/brightness"] = rd(f"{bl}/brightness")
-            wr(f"{bl}/brightness", 0)
+        for bl in backlight_targets():
+            save_write(saved, f"{bl}/brightness", 0)
         for led in glob.glob("/sys/class/leds/*"):
             if "joystick" in led or "power-led" in led:
-                saved[f"{led}/brightness"] = rd(f"{led}/brightness")
-                wr(f"{led}/brightness", 0)
-        run("/usr/lib/konkr/konkr-sleep", "standby-pre")
+                save_write(saved, f"{led}/brightness", 0)
+        prepared = True  # A failing helper may have partially prepared devices.
+        if run("/usr/lib/konkr/konkr-sleep", "standby-pre") != 0:
+            raise StandbyError("standby-pre failed")
+        check_termination()
         time.sleep(0.3)               # let gamescope commit the panel-off
-        frozen = set_frozen(freeze_targets(), True)
+        frozen = freeze_targets() + [p for p in FREEZE_SYSTEM if os.path.isdir(p)]
+        # Thaw every attempted cgroup, even on partial freeze failure.
+        accepted = set_frozen(frozen, True)
+        if len(accepted) != len(frozen) or any(
+                "frozen 1" not in rd(f"{cg}/cgroup.events") for cg in frozen):
+            raise StandbyError("session freeze failed or timed out")
         for pol in glob.glob("/sys/devices/system/cpu/cpufreq/policy*"):
             # konkrd's touch boost may still hold the floor up (it drops it
             # within 0.5 s of this flag); a max below the min would be refused.
-            wr(f"{pol}/scaling_min_freq", rd(f"{pol}/cpuinfo_min_freq"))
-            saved[f"{pol}/scaling_max_freq"] = rd(f"{pol}/scaling_max_freq")
-            wr(f"{pol}/scaling_max_freq", rd(f"{pol}/cpuinfo_min_freq"))
+            floor = rd(f"{pol}/cpuinfo_min_freq")
+            save_write(saved, f"{pol}/scaling_min_freq", floor)
+            save_write(saved, f"{pol}/scaling_max_freq", floor)
         # SM8550: no CPU hotplug and no GPU clamp. Even with one big core kept
         # online the RP6 still never woke up from standby (only a 10 s hold
         # got it back, beta 7); the Adreno 740's GMU is the fragile part.
         # Frozen apps + screen off + CPU clocks at minimum are enough there.
         sm8550 = is_sm8550()
         for cpu in ([] if sm8550 else big_cpus()):
-            if wr_ok(f"/sys/devices/system/cpu/cpu{cpu}/online", 0):
-                offlined.append(cpu)
+            offlined.append(cpu)  # Restore even if the attempted write fails.
+            if not wr(f"/sys/devices/system/cpu/cpu{cpu}/online", 0):
+                raise StandbyError(f"cannot offline CPU {cpu}")
         for gpu in ([] if sm8550 else glob.glob("/sys/class/devfreq/*gpu*")):
-            saved[f"{gpu}/max_freq"] = rd(f"{gpu}/max_freq")
             freqs = sorted(int(f) for f in rd(f"{gpu}/available_frequencies").split() if f.isdigit())
             if freqs:
-                wr(f"{gpu}/max_freq", freqs[0])
+                save_write(saved, f"{gpu}/max_freq", freqs[0])
         how = (f"{len(frozen)} session cgroups frozen (audio kept running)" if frozen
                else "session NOT frozen")
         log(f"standby: paused {len(paused)} game processes, {how}, "
             f"cpus {offlined} offline, screen off")
+        check_termination()
+        report_start = None
+        try:
+            report_start = standby_snapshot()
+        except Exception as exc:
+            log(f'diagnostic snapshot unavailable: {exc}')
         wait_power_press(fd)
         log("wake")
+        if report_start is not None:
+            try:
+                standby_report(report_start)
+            except Exception as exc:
+                log(f'diagnostic report unavailable: {exc}')
+    except (StandbyError, OSError) as exc:
+        log(f"ERROR: {exc}; restoring")
+        status = 1
     finally:
-        # CPUs and clocks first, then audio (PipeWire is still running), then
-        # the apps, so they wake to a ready speaker and a current clock.
+        # Ignore repeat termination requests during recovery; restore the
+        # caller's handlers only after all cleanup has been attempted.
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            if sig in handlers:
+                signal.signal(sig, signal.SIG_IGN)
+        # CPUs and clocks first, then audio, apps and the screen. Restore
+        # maximums before minimums so cpufreq never sees min > standby max.
         for cpu in offlined:
-            wr(f"/sys/devices/system/cpu/cpu{cpu}/online", 1)
+            if not wr(f"/sys/devices/system/cpu/cpu{cpu}/online", 1):
+                status = 1
+        for path, val in sorted(saved.items(), key=lambda item: item[0].endswith("/scaling_min_freq")):
+            if "/cpufreq/" in path or "/devfreq/" in path:
+                if not wr(path, val):
+                    status = 1
+        if prepared and run("/usr/lib/konkr/konkr-sleep", "standby-audio-on") != 0:
+            log("ERROR: standby-audio-on failed")
+            status = 1
+        if frozen and len(set_frozen(frozen, False)) != len(frozen):
+            log("ERROR: session thaw failed")
+            status = 1
+        if prepared and run("/usr/lib/konkr/konkr-sleep", "standby-screen-on") != 0:
+            log("ERROR: standby-screen-on failed")
+            status = 1
         for path, val in saved.items():
-            if val and ("/cpufreq/" in path or "/devfreq/" in path):
-                wr(path, val)
-        run("/usr/lib/konkr/konkr-sleep", "standby-audio-on")
-        if frozen:
-            set_frozen(frozen, False)
-        run("/usr/lib/konkr/konkr-sleep", "standby-screen-on")
-        for path, val in saved.items():
-            if val and "/cpufreq/" not in path and "/devfreq/" not in path:
+            if "/cpufreq/" not in path and "/devfreq/" not in path:
                 if not restore_brightness(path, val):
-                    display_restored = False
-        run("/usr/lib/konkr/konkr-sleep", "standby-post")
+                    status = 1
+        if prepared and run("/usr/lib/konkr/konkr-sleep", "standby-post") != 0:
+            log("ERROR: standby-post failed")
+            status = 1
         for pid in paused:
             try:
                 os.kill(pid, signal.SIGCONT)
-            except OSError:
-                pass
+            except ProcessLookupError:
+                pass  # A game may have exited during standby.
+            except OSError as exc:
+                log(f"ERROR: cannot resume game process {pid}: {exc}")
+                status = 1
         time.sleep(0.5)               # let the wake release settle before konkrd sees keys
         try:
             os.remove(FLAG)
-        except OSError:
+        except FileNotFoundError:
             pass
+        except OSError as exc:
+            log(f"ERROR: cannot clear standby flag: {exc}")
+            status = 1
         os.close(fd)
-        # konkrd re-applies profile clocks/LEDs on SIGHUP
-        os.system("systemctl kill -s HUP konkrd.service >/dev/null 2>&1")
-    return 0 if display_restored else 1
+        # konkrd re-applies profile clocks/LEDs on SIGHUP.
+        if run("systemctl", "kill", "-s", "HUP", "konkrd.service") != 0:
+            log("ERROR: profile reapply request failed")
+            status = 1
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
+        log("restore: complete" if status == 0 else "restore: completed with errors (see journal)")
+    return status
 
 
 if __name__ == "__main__":

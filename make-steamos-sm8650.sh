@@ -241,6 +241,7 @@ prepare_runtime() {
         "${R}/etc/systemd/system/multi-user.target.wants/sm8550-boot-debug.service" \
         "${R}/etc/systemd/system/graphical.target.wants/sm8550-boot-debug-late.service"
   "${SCRIPTS}/install-inputplumber-sm8550.sh" "${R}"
+  bash "${SCRIPTS}/install-rp6-power.sh" "${R}"
 
   # pkexec/sudo lose setuid when the rootfs is copied as a normal user.
   # Keep the boot oneshot even for --image-only.

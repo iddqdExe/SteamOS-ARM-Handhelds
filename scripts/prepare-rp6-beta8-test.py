@@ -26,7 +26,14 @@ BASE_SHA = '56f8541a5743d4fdb624cce09f9a4a34cd53608029e55ef51740403145f43147'
 SIZE = 16447963136
 LAYOUT = [(0x0c, 2048, 1048576), (0x83, 1050624, 23939072), (0x83, 24989696, 7135232)]
 POWER_SOURCES = ('scripts/install-rp6-power.sh', 'sm8650-overlay/usr/lib/konkr/konkr-standby',
-                 'sm8650-overlay/usr/lib/konkr/konkr-sleep')
+                 'sm8650-overlay/usr/lib/konkr/konkr-sleep',
+                 'sm8650-overlay/usr/lib/konkr/konkr-suspend',
+                 'sm8650-overlay/usr/lib/konkr/konkr-sleep-state',
+                 'sm8650-overlay/usr/bin/konkrctl',
+                 'external-and-mods/kernel-common/initramfs/bootdebug',
+                 'sm8650-overlay/usr/lib/systemd/system/konkr-sleep.service',
+                 'sm8650-overlay/usr/lib/systemd/system/konkr-bootflags.service',
+                 'sm8650-overlay/usr/lib/systemd/system/systemd-suspend.service.d/10-konkr-standby.conf')
 
 
 def run(*args, **kwargs):
@@ -83,7 +90,8 @@ def image_mounts(image):
 
 def install_power(root):
     run('bash', REPO / 'scripts/install-rp6-power.sh', root)
-    return ['usr/lib/konkr/konkr-standby', 'usr/lib/konkr/konkr-sleep']
+    payload = load('rp6_power_payload', REPO / 'scripts/prepare-rp6-kernel-release.py')
+    return sorted(payload.POWER_FILES | payload.POWER_LINKS.keys())
 
 
 def prepare_kernel(data):

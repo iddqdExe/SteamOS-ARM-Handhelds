@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""RP6 sleep preparation/recovery and measured drain diagnostics.
+
+Adapts SteamOS ARM ccefcd50d716690eba6e57df9798f858512af6b7; keeps a
+root-only recovery record until every restoration step succeeds.
+"""
+import fcntl
+import json
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import sys
+import time
+
+WIFI=('ath12k_wifi7','ath12k')
+WAKE_PATTERNS=('devices/platform/pmic-glink/*/power_supply/*/power/wakeup',
+               'bus/mhi/devices/mhi*/power/wakeup','bus/pci/devices/*/power/wakeup',
+               'devices/platform/soc@0/*.remoteproc/power/wakeup')
+POWER_PATTERNS=('devices/platform/soc@0/*.spmi/spmi-0/*/*pon*/*pwrkey/power/wakeup',
+                'devices/platform/gpio-keys/power/wakeup')
+
+def log(msg): print('konkr-sleep: '+msg,flush=True)
+
+def read(path):
+    try:return Path(path).read_text().strip()
+    except OSError:return ''
+
+def battery_now(sys_root=Path('/sys')):
+    for p in sys_root.glob('class/power_supply/*'):
+        if read(p/'type')=='Battery':
+            return {k:read(p/k) for k in ('capacity','energy_now','charge_now','voltage_now','status')} | {'pct':read(p/'capacity')}
+    return {}
+
+def irq_counts(proc_root=Path('/proc')):
+    lines=read(proc_root/'interrupts').splitlines();out={}
+    if not lines:return out
+    ncpu=len(lines[0].split())
+    for line in lines[1:]:
+        f=line.split()
+        if len(f)>ncpu and all(n.isdigit() for n in f[1:1+ncpu]):
+            out[f[0]+' '+' '.join(f[1+ncpu:])]=sum(map(int,f[1:1+ncpu]))
+    return out
+
+def drain_report(seconds,before,after):
+    msg=f'{seconds/3600:.3f} h, battery {before.get("pct","?")}% -> {after.get("pct","?")}%'
+    discharging=before.get('status')==after.get('status')=='Discharging'
+    if not discharging:return msg+' (charging/status unknown; drain estimate omitted)'
+    if seconds<180:return msg+' (short interval; rate omitted)'
+    hours=seconds/3600
+    try:
+        delta=int(before['pct'])-int(after['pct'])
+        if delta>=0:msg+=f', {delta/hours:.2f} %/h'
+    except (KeyError,ValueError):pass
+    # energy_now is micro-Wh. Charge*instantaneous voltage is not a measured
+    # energy delta, so never silently substitute it for energy_now.
+    try:
+        delta=int(before['energy_now'])-int(after['energy_now'])
+        if delta>=0:msg+=f', {delta/1e6/hours:.3f} Wh/h'
+    except (KeyError,ValueError):pass
+    return msg
+
+class SleepState:
+    def __init__(self,sys_root=Path('/sys'),proc_root=Path('/proc'),run_dir=Path('/run/konkr')):
+        self.sys=Path(sys_root);self.proc=Path(proc_root);self.run=Path(run_dir)
+        self.state_path=self.run/'sleep-state.json'
+        self.ready_path=self.run/'sleep-ready'
+    def command(self,*args,timeout=18):
+        process=None
+        try:
+            # Record the PID before delivering a termination signal. Cleanup
+            # always kills the entire private group before recovery begins.
+            blocked=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGTERM,signal.SIGINT})
+            try:process=subprocess.Popen(args,start_new_session=True)
+            finally:signal.pthread_sigmask(signal.SIG_SETMASK,blocked)
+            code=process.wait(timeout=timeout)
+            if code:raise subprocess.CalledProcessError(code,args)
+        finally:
+            if process is not None:
+                try:os.killpg(process.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                process.wait()
+    def counters(self):
+        return {k:read(self.sys/'power/suspend_stats'/k) for k in ('success','fail','last_failed_step','last_failed_dev')}
+    def snapshot(self):
+        wake={}
+        for pattern,value in [(p,'disabled') for p in WAKE_PATTERNS]+[(p,'enabled') for p in POWER_PATTERNS]:
+            for path in self.sys.glob(pattern):
+                previous=read(path)
+                if previous not in ('enabled','disabled'):raise RuntimeError('cannot read wake state: '+str(path))
+                wake[str(path.relative_to(self.sys))]={'before':previous,'sleep':value}
+        driver=self.sys/'bus/i2c/drivers/chipone-tddi'
+        touch=[p.name for p in driver.glob('[0-9]*-*') if p.exists()]
+        return {'format':'rp6-sleep-state-1','wake':wake,'touch':touch,
+                'wifi':[m for m in WIFI if (self.sys/'module'/m).is_dir()],
+                'start':time.clock_gettime(time.CLOCK_BOOTTIME),'battery':battery_now(self.sys),
+                'irqs':irq_counts(self.proc),'counters':self.counters(),
+                'mem_sleep':read(self.sys/'power/mem_sleep').split('[')[-1].split(']')[0]}
+    def save(self,state):
+        self.run.mkdir(mode=0o700,parents=True,exist_ok=True)
+        fd=os.open(self.state_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+        with os.fdopen(fd,'w') as stream:json.dump(state,stream);stream.flush();os.fsync(stream.fileno())
+    def validate(self,state):
+        if state.get('format')!='rp6-sleep-state-1':raise ValueError('invalid recovery format')
+        if not isinstance(state.get('wifi'),list) or any(m not in WIFI for m in state['wifi']):raise ValueError('invalid Wi-Fi record')
+        if not isinstance(state.get('touch'),list) or any(not __import__('re').fullmatch(r'[0-9]+-[0-9a-fA-F]+',n) for n in state['touch']):raise ValueError('invalid touch record')
+        if not isinstance(state.get('wake'),dict):raise ValueError('invalid wake record')
+        for rel,record in state['wake'].items():
+            path=Path(rel)
+            if path.is_absolute() or '..' in path.parts or not rel.endswith('/power/wakeup') or not any(path.match(p) for p in WAKE_PATTERNS+POWER_PATTERNS):raise ValueError('invalid wake path')
+            if record.get('before') not in ('enabled','disabled'):raise ValueError('invalid wake state')
+        if state.get('mem_sleep') not in ('s2idle','shallow','deep'):raise ValueError('invalid mem_sleep record')
+    def prepare(self):
+        self.ready_path.unlink(missing_ok=True)
+        if self.state_path.exists() or self.state_path.is_symlink():raise RuntimeError('pending sleep recovery; run post first')
+        if 's2idle' not in read(self.sys/'power/mem_sleep'):raise RuntimeError('s2idle unavailable')
+        state=self.snapshot();self.validate(state);self.save(state)
+        try:
+            self.command('/usr/lib/konkr/konkr-sleep','audio-off')
+            for rel,record in state['wake'].items():(self.sys/rel).write_text(record['sleep'])
+            driver=self.sys/'bus/i2c/drivers/chipone-tddi'
+            for name in state['touch']:(driver/'unbind').write_text(name)
+            if state['wifi']:self.command('modprobe','-r',*state['wifi'])
+            (self.sys/'power/mem_sleep').write_text('s2idle')
+            fd=os.open(self.ready_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+            os.close(fd)
+            log('pre: s2idle prepared; recovery record saved')
+        except BaseException:
+            self.recover();raise
+    def report(self,state):
+        seconds=max(0,time.clock_gettime(time.CLOCK_BOOTTIME)-state['start'])
+        now=self.counters();delta={}
+        for key in ('success','fail'):
+            try:delta[key]=int(now[key])-int(state['counters'][key])
+            except (KeyError,ValueError):delta[key]='?'
+        irq=read(self.sys/'power/pm_wakeup_irq')
+        top=sorted(((n-state.get('irqs',{}).get(k,n),k) for k,n in irq_counts(self.proc).items()),reverse=True)[:6]
+        log('s2idle report: '+drain_report(seconds,state['battery'],battery_now(self.sys))+f', suspends ok {delta["success"]} failed {delta["fail"]}, wake irq {irq or "?"}, last failed {now["last_failed_step"]} {now["last_failed_dev"]}; irq delta '+str(top))
+    def recover(self):
+        self.ready_path.unlink(missing_ok=True)
+        if not self.state_path.exists() and not self.state_path.is_symlink():return True
+        try:
+            fd=os.open(self.state_path,os.O_RDONLY|os.O_NOFOLLOW)
+            with os.fdopen(fd) as stream:state=json.load(stream)
+            self.validate(state)
+        except (OSError,ValueError,TypeError,KeyError) as exc:log('ERROR: invalid recovery record: '+str(exc));return False
+        errors=[]
+        def attempt(fn):
+            try:fn()
+            except Exception as exc:errors.append(str(exc));log('ERROR: recovery: '+str(exc))
+        # Always try every restoration step, even when a preceding one fails.
+        driver=self.sys/'bus/i2c/drivers/chipone-tddi'
+        for name in state['touch']:
+            if not (self.sys/'bus/i2c/devices'/name/'driver').exists():attempt(lambda n=name:(driver/'bind').write_text(n))
+        for module in state['wifi']:attempt(lambda m=module:self.command('modprobe',m))
+        for rel,record in state['wake'].items():attempt(lambda r=rel,v=record['before']:(self.sys/r).write_text(v))
+        attempt(lambda:(self.sys/'power/mem_sleep').write_text(state['mem_sleep']))
+        attempt(lambda:self.command('/usr/lib/konkr/konkr-sleep','audio-on'))
+        attempt(lambda:self.command('systemctl','kill','-s','HUP','konkrd.service'))
+        try:self.report(state)
+        except Exception as exc:log('report unavailable: '+str(exc))
+        if not errors:self.state_path.unlink();log('post: restored')
+        else:log('ERROR: recovery pending; next sleep blocked')
+        return not errors
+
+def diagnostics():
+    sys_root=Path('/sys')
+    report={'mem_sleep':read(sys_root/'power/mem_sleep'),'suspend_stats':SleepState().counters(),
+            'wake_irq':read(sys_root/'power/pm_wakeup_irq'),'battery':battery_now(),
+            'usb':{},'ucsi_commands':[],'typec_partners':[]}
+    for p in sys_root.glob('class/power_supply/*'):
+        if read(p/'type') in ('USB','USB_C','USB_PD') or 'usb' in p.name:
+            report['usb'][p.name]={k:read(p/k) for k in ('online','voltage_now','current_now','usb_type','status')}
+    report['ucsi_commands']=[str(p) for p in sys_root.glob('kernel/debug/usb/ucsi/*/command')]
+    report['typec_partners']=[p.name for p in sys_root.glob('class/typec/*-partner')]
+    print(json.dumps(report,indent=2))
+
+def main():
+    mode=sys.argv[1] if len(sys.argv)==2 else ''
+    if mode=='diagnose':diagnostics();return 0
+    if mode not in ('pre','post'):print('usage: konkr-sleep-state pre|post|diagnose',file=sys.stderr);return 2
+    state=SleepState();state.run.mkdir(mode=0o700,parents=True,exist_ok=True)
+    fd=os.open(state.run/'sleep-state.lock',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        old={}
+        def terminate(signum,frame):
+            for sig in old:signal.signal(sig,signal.SIG_IGN)
+            raise InterruptedError('sleep preparation interrupted')
+        for sig in (signal.SIGTERM,signal.SIGINT):old[sig]=signal.signal(sig,terminate)
+        try:
+            if mode=='pre':state.prepare();return 0
+            # Recovery must finish all steps despite repeated termination.
+            for sig in old:signal.signal(sig,signal.SIG_IGN)
+            return 0 if state.recover() else 1
+        except Exception as exc:log('ERROR: '+str(exc));return 1
+        finally:
+            for sig,handler in old.items():signal.signal(sig,handler)
+
+if __name__=='__main__':sys.exit(main())

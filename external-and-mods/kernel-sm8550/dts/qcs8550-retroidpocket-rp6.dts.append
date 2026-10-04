@@ -41,3 +41,27 @@
 &sdhc_2 {
 	/delete-property/ sdhci-caps-mask;
 };
+
+/* UP-04: SteamOS ARM ccefcd50d716690eba6e57df9798f858512af6b7.
+ * RP6-specific adaptation of the AYN common s2idle dependencies. */
+&pcieport0 {
+	wake-gpios = <&tlmm 96 GPIO_ACTIVE_LOW>;
+};
+&vdd_mcu_3v3 {
+	/delete-property/ regulator-always-on;
+};
+&gamepad {
+	vdd-supply = <&vdd_mcu_3v3>;
+};
+&vreg_l15b_1p8 {
+	regulator-state-mem {
+		regulator-on-in-suspend;
+		regulator-mode = <RPMH_REGULATOR_MODE_LPM>;
+	};
+};
+&vreg_bob1 {
+	regulator-state-mem {
+		regulator-on-in-suspend;
+		regulator-mode = <RPMH_REGULATOR_MODE_LPM>;
+	};
+};

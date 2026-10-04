@@ -1,0 +1,12 @@
+[Unit]
+Description=RP6 experimental sleep flag on BOOT
+After=local-fs.target
+Before=konkrd.service display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'mkdir -p /run/konkr; rm -f /run/konkr/s2idle; mountpoint -q /boot || mount /boot 2>/dev/null; for f in s2idle s2idle.txt; do [ -e /boot/$f ] && touch /run/konkr/s2idle; done; exit 0'
+
+[Install]
+WantedBy=multi-user.target

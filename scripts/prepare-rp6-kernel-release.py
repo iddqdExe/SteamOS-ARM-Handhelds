@@ -32,7 +32,38 @@ kernel_check = load('rp6_kernel_release_check', 'scripts/check-rp6-kernel.py')
 release = sealed.release
 
 
-def assert_root_delta(before, after):
+# UP-04 has a fixed payload, never a caller-controlled path allowlist.
+POWER_FILES = {
+    'usr/lib/konkr/konkr-standby', 'usr/lib/konkr/konkr-sleep',
+    'usr/lib/konkr/konkr-suspend', 'usr/lib/konkr/konkr-sleep-state',
+    'usr/bin/konkrctl', 'usr/lib/steamos-arm/bootdebug',
+    'usr/lib/systemd/system/konkr-sleep.service',
+    'usr/lib/systemd/system/konkr-bootflags.service',
+    'usr/lib/systemd/system/systemd-suspend.service.d/10-konkr-standby.conf',
+}
+POWER_LINKS = {
+    'usr/lib/systemd/system/multi-user.target.wants/konkr-bootflags.service': '../konkr-bootflags.service',
+    'usr/lib/systemd/system/sleep.target.wants/konkr-sleep.service': '../konkr-sleep.service',
+}
+
+
+def install_power_runtime(root):
+    sealed.run('bash', REPO / 'scripts/install-rp6-power.sh', root)
+    for name in POWER_FILES:
+        src = (REPO / 'external-and-mods/kernel-common/initramfs/bootdebug' if name.endswith('/bootdebug')
+               else REPO / 'sm8650-overlay' / name)
+        target = root / name
+        mode = 0o644 if name.endswith(('.service', '.conf')) else 0o755
+        if (target.is_symlink() or not target.is_file() or target.stat().st_uid != 0 or
+                target.stat().st_gid != 0 or target.stat().st_mode & 0o777 != mode or
+                release.digest(target) != release.digest(src)):
+            raise ValueError('UP-04 runtime verification failed: ' + name)
+    for name, expected in POWER_LINKS.items():
+        if not (root / name).is_symlink() or os.readlink(root / name) != expected:
+            raise ValueError('UP-04 unit enablement failed: ' + name)
+
+
+def assert_root_delta(before, after, *, power_runtime=False):
     removed_firmware = {p for p in before.keys() - after.keys()
                         if p == 'usr/lib/firmware' or p.startswith('usr/lib/firmware/')}
     if removed_firmware:
@@ -40,6 +71,7 @@ def assert_root_delta(before, after):
     changed = {p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
     def allowed(path):
         return (path == 'usr/share/steamos-arm/release-manifest.json' or
+                (power_runtime and path in POWER_FILES | POWER_LINKS.keys()) or
                 any(path == prefix or path.startswith(prefix + '/') for prefix in
                     ('usr/lib/modules', 'usr/lib/firmware')))
     unexpected = changed - {p for p in changed if allowed(p)}
@@ -108,7 +140,8 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
     if not sys.platform.startswith('linux') or os.geteuid() != 0:
         raise ValueError('Linux/root required')
     recipe = json.loads(recipe_path.read_text()); assembly = recipe.get('assembly', {})
-    if assembly.get('type') != 'sealed-up08-kernel-replacement' or assembly.get('clean_distro_source_build') is not False:
+    power_runtime = assembly.get('type') == 'sealed-up03-power-replacement' and recipe.get('module') == 'UP-04'
+    if (assembly.get('type') != 'sealed-up08-kernel-replacement' and not power_runtime) or assembly.get('clean_distro_source_build') is not False:
         raise ValueError('explicit sealed UP08 kernel replacement provenance required')
     tc = recipe.get('toolchain', {})
     if (not re.fullmatch(r'sha256:[0-9a-f]{64}', tc.get('builder_image', '')) or
@@ -139,6 +172,7 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
         if release.digest(boot_dir / 'KERNEL') != assembly.get('base_kernel_sha256'):
             raise ValueError('accepted base KERNEL SHA256 mismatch')
         before = sealed.tree_inventory(root); before_boot = sealed.tree_inventory(boot_dir)
+        if power_runtime: install_power_runtime(root)
         replace_directory(kernel_dir / 'modules', root / 'usr/lib/modules')
         # The kernel bundle supplies GPU/Wi-Fi blobs, not a complete distro
         # firmware tree. Retain accepted Bluetooth and other firmware.
@@ -166,7 +200,7 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
         marker = root / 'usr/share/steamos-arm/release-manifest.json'
         if marker.is_symlink(): raise ValueError('release marker must be regular')
         shutil.copyfile(manifest_path, marker); marker.chmod(0o644)
-        after = sealed.tree_inventory(root); delta = assert_root_delta(before, after)
+        after = sealed.tree_inventory(root); delta = assert_root_delta(before, after, power_runtime=power_runtime)
         boot_delta = assert_boot_delta(before_boot, sealed.tree_inventory(boot_dir))
         inventory_path = image.with_name(image.name + '.root-inventory.json.gz')
         with inventory_path.open('xb') as handle:

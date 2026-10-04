@@ -168,7 +168,10 @@ class TouchTests(unittest.TestCase):
             # UP-03 adds a reference to the real SD controller; include it
             # in this small synthetic board while still testing the touch bus.
             source += '\n/ { sdhc_2: mmc { sdhci-caps-mask = <3 0>; }; };\n'
+            # UP-04's real RP6 sleep labels and resolved binding constants.
+            source += '/ { tlmm: pinctrl {}; pcieport0: pcie {}; vdd_mcu_3v3: mcu {}; gamepad: gamepad {}; vreg_l15b_1p8: codec {}; vreg_bob1: bob {}; };\n'
             append = (REPO / 'external-and-mods/kernel-sm8550/dts/qcs8550-retroidpocket-rp6.dts.append').read_text()
+            append = append.replace('GPIO_ACTIVE_LOW', '1').replace('RPMH_REGULATOR_MODE_LPM', '1')
             tree = subprocess.run(['dtc', '-q', '-I', 'dts', '-O', 'dtb'], input=(source + append).encode(), capture_output=True, check=True).stdout
             self.assertEqual(prop(tree, BUS, 'clock-frequency', 'i'), '400000')
             result = self.check(boot(IMAGE + tree))
