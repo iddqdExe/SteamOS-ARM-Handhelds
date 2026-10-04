@@ -82,7 +82,13 @@ prepare_source() {
   local tarball="${CACHE}/linux-${KVER}.tar.xz"
   fetch "https://cdn.kernel.org/pub/linux/kernel/v${KVER%%.*}.x/linux-${KVER}.tar.xz" "$tarball"
   local patch_digest
-  patch_digest="$( { echo "$PATCH_DIRS ${PATCH_SKIP:-}"; find "${SOC_DIR}" -path "${SOC_DIR}/patches/*" -type f -o -path "${SOC_DIR}/dts/*" -type f | sort | xargs -r sha256sum | cut -d" " -f1; } | sha256sum | cut -d" " -f1)"
+  if [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-7.1}" == 7.2 ]]; then
+    patch_digest="$(python3 "${PORT_ROOT}/scripts/check-rp6-kernel.py" fingerprint \
+      --soc "$SOC_DIR" --common "$HERE" --rocknix "$ROCKNIX_DIR" \
+      --patch-dirs "$PATCH_DIRS" --skips="${PATCH_SKIP:-}" --dtbs "$DTBS")"
+  else
+    patch_digest="$( { echo "$PATCH_DIRS ${PATCH_SKIP:-}"; find "${SOC_DIR}" -path "${SOC_DIR}/patches/*" -type f -o -path "${SOC_DIR}/dts/*" -type f | sort | xargs -r sha256sum | cut -d" " -f1; } | sha256sum | cut -d" " -f1)"
+  fi
   if [[ -f "${SRC}/.${SOC}-patched" && "$(cat "${SRC}/.${SOC}-patched")" == "$patch_digest" ]]; then
     log "source already patched: ${SRC}"
     return 0
@@ -305,6 +311,13 @@ install_output() {
   cp -a "${EXTRA_FW_SRC}/${ROCKNIX_DEVICE}/." "$o/firmware/"
   # Built-in copies are enough for the GPU; keep rootfs copies too for tooling.
   cp -a "${SRC}/external-firmware/." "$o/firmware/"
+  if [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-7.1}" == 7.2 ]]; then
+    local gpu
+    for gpu in qcom/a740_sqe.fw qcom/gmu_gen70200.bin qcom/sm8550/a740_zap.mbn; do
+      mkdir -p "$o/firmware/$(dirname "$gpu")"
+      cp "${CACHE}/linux-firmware-${LINUX_FW_REF}/${gpu}" "$o/firmware/${gpu}"
+    done
+  fi
 
   local dtb
   for dtb in $DTBS; do cp "${SRC}/arch/arm64/boot/dts/qcom/${dtb}.dtb" "$o/dtbs/"; done
@@ -317,6 +330,14 @@ install_output() {
 }
 
 main() {
+  if [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-7.1}" == 7.2 ]]; then
+    [[ "$(gcc -dumpversion | cut -d. -f1)" == 15 ]] || die "RP6 7.2.8 requires GCC 15"
+    python3 "${PORT_ROOT}/scripts/check-rp6-kernel.py" inputs \
+      --lock "${SOC_DIR}/recipe-7.2.lock.json" --cache "$CACHE" \
+      --frame "${FRAME_FW_DIR:-/work/rootfs-sm8550/opt/stock-steamos}" \
+      --rocknix "$ROCKNIX_DIR" --toolchain-id "${RP6_BUILDER_IMAGE:-}" \
+      --busybox /bin/busybox || die "locked kernel inputs rejected"
+  fi
   if [[ "${1:-}" == --repack-boot ]]; then
     [[ -s "$SRC/arch/arm64/boot/Image" ]] || die "no previously built kernel Image"
     KREL="$(make -s -C "$SRC" kernelrelease)"

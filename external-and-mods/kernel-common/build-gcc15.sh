@@ -16,7 +16,11 @@ BUSYBOX="${BUSYBOX:-/bin/busybox}"
 PKGS="file gcc make bc bison flex python3 curl tar xz gzip cpio kmod patch perl rsync
       openssl-devel elfutils-libelf-devel dwarves diffutils findutils hostname which git"
 env_args=()
-for v in SM8550_RECIPE WORK ROCKNIX_DIR JOBS OUT_BASE LOCALVERSION DTBS_OVERRIDE; do
+env_args+=(-e "RP6_BUILDER_IMAGE=$(docker image inspect --format '{{.Id}}' "$IMAGE")")
+for v in WORK ROCKNIX_DIR FRAME_FW_DIR OUT_BASE; do
+  [[ -z "${!v:-}" || "${!v}" == "$MOUNT"/* ]] || { echo "$v is outside $MOUNT" >&2; exit 1; }
+done
+for v in SM8550_RECIPE SM8550_KERNEL FRAME_FW_DIR TDDI_REF WORK ROCKNIX_DIR JOBS OUT_BASE LOCALVERSION DTBS_OVERRIDE; do
   [[ -n "${!v:-}" ]] && env_args+=(-e "$v=${!v}")
 done
 exec docker run --rm -v "$MOUNT:$MOUNT" -v "$BUSYBOX:/bin/busybox:ro" "${env_args[@]}" \
