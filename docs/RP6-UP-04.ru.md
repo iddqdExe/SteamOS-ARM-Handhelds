@@ -25,6 +25,10 @@ Default остаётся standby. Для проверки s2idle:
 
 Read-only диагностика: `sudo /usr/lib/konkr/konkr-sleep-state diagnose`; журнал `journalctl -b -g 's2idle report|standby report|PM: suspend|PM: resume'`. BOOT/debug collector включает эти данные. При pending recovery: `sudo /usr/lib/konkr/konkr-sleep post`; ошибка сохраняет подробности в journal и recovery record.
 
+По прямому указанию пользователя RP6 recipe7.2 сохраняет диагностику после приёмки: `console=tty0 loglevel=7 systemd.show_status=1 steamos.debug=1`. Collector пишет последние снимки в BOOT/debug-logs каждые20 секунд в начале и каждые60 секунд далее всю сессию. Включены kernel/system/user/gamescope journals, cmdline/release, storage/mounts, input, network, GPU/display/backlight, remoteproc, thermal/CPU frequency, power supplies и suspend reports. Persistent journal ограничен96MiB, RAM journal32MiB, выгрузки journal — последние3000 записей; снимки перезаписываются. Vulkan probe выполняется один раз с timeout10s. Диагностика не отключается автоматически после аппаратных испытаний.
+
+Initramfs builder устанавливает BusyBox с mode0755 независимо от прав входного файла. Artifact validator проверяет исполняемый обычный файл интерпретатора внутри packed KERNEL, помимо SHA256 и hook bytes: mode0644 воспроизводит RP6 panic `Failed to execute /init (error -13)`.
+
 ## USB-PD
 
 Изучен donor `02120f2bc1b34a1ae7203aa28dc3d933e99cbfbc`. Его активный boot connector reset испытан на Pocket FIT. На RP6 аналогичный отказ 5 V/no partner ещё не воспроизведён; перенос active reset не включён. Доставлена read-only диагностика USB power_supply, UCSI debugfs и Type-C partners. Для решения проверить зарядник подключённым до boot, hotplug, сон на зарядке и отключение. Нормальные 5 V от обычного USB не должны вызывать reset.

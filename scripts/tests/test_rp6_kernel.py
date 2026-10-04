@@ -126,6 +126,17 @@ class KernelInputsTests(unittest.TestCase):
                            capture_output=True, text=True, check=True)
         self.assertEqual(r.stdout, 'rocknix')
 
+    def test_rp6_boot_diagnostics_remain_enabled_by_default(self):
+        command = 'unset SM8550_RECIPE CMDLINE_QUIET KERNEL_CMDLINE_EXTRA; source "$1"; source "$2"; build_cmdline 3b55bcf9-02'
+        r = subprocess.run(['bash', '-c', command, 'fixture',
+                            str(REPO / 'external-and-mods/kernel-sm8550/soc.env'),
+                            str(REPO / 'external-and-mods/kernel-common/cmdline.sh')],
+                           capture_output=True, text=True, check=True)
+        args = r.stdout.split()
+        for arg in ('console=tty0', 'loglevel=7', 'systemd.show_status=1', 'steamos.debug=1', 'root=PARTUUID=3b55bcf9-02'):
+            self.assertIn(arg, args)
+        self.assertNotIn('quiet', args)
+
     def test_rejects_chipone_ref_override(self):
         self.lock['inputs'][2]['path'] = 'chipone_tddi-' + 'a'*40 + '.tar.gz'
         (self.cache / 'chipone').rename(self.cache / self.lock['inputs'][2]['path'])

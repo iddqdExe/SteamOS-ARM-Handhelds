@@ -4,24 +4,28 @@
 # debug KERNEL) or a file called "debug" sits on the FAT boot partition. The
 # SM8550 image also ships it as steamos-arm-bootdebug-file.service, for
 # kernels that bring their own initramfs.
-# Right away, then every 20 s for 3 minutes, it writes the logs to BOOT/debug-logs/, which
-# any PC can read.
+# Collect throughout the session: every 20 s initially, every 60 s afterward.
+# Latest snapshots overwrite the same files; persistent journal is bounded.
 out=/boot/debug-logs
 mountpoint -q /boot || mount /boot 2>/dev/null
 mkdir -p "$out" || exit 0
 # The boot before this one: after a freeze and a forced restart, that's the
 # one with the answer (the journal is persistent).
-journalctl -b -1 --no-pager -o short-monotonic > "$out/journal-previous-boot.txt" 2>&1
+journalctl -b -1 --no-pager -o short-monotonic -n 3000 > "$out/journal-previous-boot.txt" 2>&1
 i=0
 # First pass straight away (a hang shortly after boot still leaves logs),
 # then every 20 s.
-while [ "$i" -lt 10 ]; do
-  [ "$i" -gt 0 ] && sleep 20
-  i=$((i + 1))
+while :; do
+  if [ "$i" -ge 10 ]; then sleep 60
+  elif [ "$i" -gt 0 ]; then sleep 20
+  fi
+  [ "$i" -ge 10 ] || i=$((i + 1))
   {
     echo "=== pass $i  uptime $(cat /proc/uptime)"
     cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0'; echo
     uname -a
+    echo "--- cmdline"; cat /proc/cmdline
+    echo "--- release"; cat /usr/share/steamos-arm/release-manifest.json 2>/dev/null
     echo "--- suspend diagnostics"
     cat /sys/power/mem_sleep /sys/power/pm_wakeup_irq /sys/power/suspend_stats/* 2>/dev/null
     [ ! -x /usr/lib/konkr/konkr-sleep-state ] || /usr/lib/konkr/konkr-sleep-state diagnose
@@ -31,6 +35,16 @@ while [ "$i" -lt 10 ]; do
     echo "--- drm"; for c in /sys/class/drm/card*-*; do echo "$c $(cat $c/status 2>/dev/null) $(head -1 $c/modes 2>/dev/null)"; done
     echo "--- backlight"; for b in /sys/class/backlight/*; do echo "$b $(cat $b/brightness)/$(cat $b/max_brightness)"; done
     echo "--- gpu"; ls /sys/class/devfreq/ 2>&1; dmesg | grep -i -E "adreno|msm_dpu|a7xx|gmu|zap|drm" | tail -40
+    echo "--- thermal"
+    for t in /sys/class/thermal/thermal_zone*; do
+      [ -e "$t/temp" ] && echo "${t##*/} $(cat "$t/type") $(cat "$t/temp")"
+    done
+    echo "--- cpu frequency"
+    for p in /sys/devices/system/cpu/cpufreq/policy*; do
+      [ -e "$p/scaling_cur_freq" ] && echo "${p##*/} $(cat "$p/scaling_governor") $(cat "$p/scaling_cur_freq")"
+    done
+    echo "--- power supplies"
+    for p in /sys/class/power_supply/*; do [ ! -f "$p/uevent" ] || cat "$p/uevent"; done
   } > "$out/summary.txt" 2>&1
   dmesg > "$out/dmesg.txt" 2>&1
   {
@@ -44,12 +58,22 @@ while [ "$i" -lt 10 ]; do
     echo "--- input"; cat /proc/bus/input/devices
     echo "--- network"; ip -br link 2>&1; nmcli -t device 2>&1
     echo "--- modules"; cat /proc/modules
+    echo "--- storage"; cat /proc/partitions; cat /proc/mounts; df -h 2>&1
+    echo "--- interrupts"; cat /proc/interrupts
+    echo "--- remoteproc"
+    for p in /sys/class/remoteproc/remoteproc*; do
+      [ -e "$p/state" ] && echo "${p##*/} $(cat "$p/name") $(cat "$p/state")"
+    done
+    echo "--- mmc ios"
+    for p in /sys/kernel/debug/mmc*/ios; do [ ! -f "$p" ] || cat "$p"; done
   } > "$out/devices.txt" 2>&1
-  journalctl -b --no-pager -o short-monotonic > "$out/journal.txt" 2>&1
-  journalctl -b --no-pager -o short-monotonic _UID=1000 > "$out/journal-user.txt" 2>&1
-  journalctl -b --no-pager -o short-monotonic -t gamescope-session -t gamescope -t bottom-screen > "$out/gamescope.txt" 2>&1
-  runuser -u steamos -- env XDG_RUNTIME_DIR=/run/user/1000 vulkaninfo --summary > "$out/vulkan.txt" 2>&1
+  journalctl -b --no-pager -o short-monotonic -n 3000 > "$out/journal.txt" 2>&1
+  journalctl -b --no-pager -o short-monotonic -n 3000 _UID=1000 > "$out/journal-user.txt" 2>&1
+  journalctl -b --no-pager -o short-monotonic -n 3000 -t gamescope-session -t gamescope -t bottom-screen > "$out/gamescope.txt" 2>&1
+  # A stuck graphics probe must not block later collection. Probe once.
+  if [ "$i" -eq 1 ]; then
+    timeout 10 runuser -u steamos -- env XDG_RUNTIME_DIR=/run/user/1000 vulkaninfo --summary > "$out/vulkan.txt" 2>&1
+  fi
+  echo "pass $i, $(date)" > "$out/LAST-PASS.txt"
   sync
 done
-echo "done, $(date)" > "$out/DONE.txt"
-sync

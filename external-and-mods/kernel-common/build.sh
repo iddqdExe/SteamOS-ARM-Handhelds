@@ -265,7 +265,7 @@ build_initramfs() {
   file "$bb" 2>/dev/null | grep -q "statically linked" \
     || die "need a static busybox (apt install busybox-static)"
   rm -rf "$d"; mkdir -p "$d/root/bin" "$d/root/dev" "$d/root/proc" "$d/root/sys"
-  cp "$bb" "$d/root/bin/busybox"
+  install -m0755 "$bb" "$d/root/bin/busybox"
   install -m0755 "${HERE}/initramfs/init" "$d/root/init"
   install -m0644 "${HERE}/initramfs/mount-etc-overlay" "$d/root/mount-etc-overlay"
   install -m0755 "${HERE}/initramfs/konkr-update-recover" "$d/root/konkr-update-recover"

@@ -3,6 +3,8 @@ from pathlib import Path
 import gzip
 import hashlib
 import importlib.util
+import os
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -76,6 +78,29 @@ class InitramfsRepackTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('boot image ID', result.stderr)
         self.assertIsNone(candidate)
+
+
+@unittest.skipUnless(shutil.which('cpio') and Path('/bin/busybox').exists(), 'requires Linux static BusyBox and cpio')
+class InitramfsBuildTests(unittest.TestCase):
+    def test_build_installs_executable_interpreter_from_nonexecutable_input(self):
+        source = (REPO / 'external-and-mods/kernel-common/build.sh').read_text()
+        start = source.index('build_initramfs() {')
+        function = source[start:source.index('\n}\n', start) + 3]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); busybox = root / 'busybox'
+            busybox.write_bytes(Path('/bin/busybox').read_bytes()); busybox.chmod(0o644)
+            # Redirect only the input path; execute the real packing function.
+            function = function.replace('bb=/bin/busybox', 'bb="$FIXTURE_BUSYBOX"')
+            env = dict(os.environ, FIXTURE_BUSYBOX=str(busybox), WORK=str(root / 'work'),
+                       HERE=str(REPO / 'external-and-mods/kernel-common'))
+            subprocess.run(['bash', '-euc', 'die() { echo "$*" >&2; exit 1; };\n' + function + '\nbuild_initramfs'],
+                           env=env, check=True, capture_output=True)
+            spec = importlib.util.spec_from_file_location('build_cpio', REPO / 'scripts/repack-rp6-initramfs.py')
+            cpio = importlib.util.module_from_spec(spec); spec.loader.exec_module(cpio)
+            entries = {name.removeprefix('./'): (fields, data)
+                       for name, fields, data in cpio.read_cpio((root / 'work/initramfs/initrd.cpio').read_bytes())}
+            self.assertEqual(entries['bin/busybox'][0][1], 0o100755)
+            self.assertEqual(entries['bin/busybox'][1], busybox.read_bytes())
 
 
 if __name__ == '__main__': unittest.main()

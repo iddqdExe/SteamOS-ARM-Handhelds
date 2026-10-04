@@ -61,11 +61,13 @@ class KernelArtifactTests(unittest.TestCase):
         (self.bundle/'boot').mkdir()
         self.pack()
 
-    def pack(self, *, missing_firmware=False, stale_config=False, aligned=True):
+    def pack(self, *, missing_firmware=False, stale_config=False, aligned=True, busybox_mode=0o100755):
         cpio=load('kernel_cpio',REPO/'scripts/repack-rp6-initramfs.py')
         entries=[]
         for inode,(name,data) in enumerate(self.init.items(),1):
             fields=[inode,0o100755 if name in ('init','konkr-update-recover','bootdebug','bin/busybox') else 0o100644,0,0,1,0,0,0,0,0,0,0,0]
+            if name == 'bin/busybox':
+                fields[1] = busybox_mode
             entries.append((name,fields,data))
         embedded=b'Linux version '+self.rel.encode()+b' fixture\0'+cpio.write_cpio(entries)
         embedded+=b'IKCFG_ST'+gzip.compress((self.config if not stale_config else self.config.replace('OVERLAY_FS=y','OVERLAY_FS=m')).encode(),mtime=0)+b'IKCFG_ED'
@@ -110,6 +112,10 @@ class KernelArtifactTests(unittest.TestCase):
     def test_rejects_stale_embedded_initramfs(self):
         self.init['mount-etc-overlay']=b'old early /etc';self.pack()
         r=self.invoke();self.assertNotEqual(r.returncode,0);self.assertIn('initramfs',r.stderr)
+
+    def test_rejects_nonexecutable_busybox_interpreter(self):
+        self.pack(busybox_mode=0o100644)
+        r=self.invoke();self.assertNotEqual(r.returncode,0);self.assertIn('BusyBox is not executable',r.stderr)
 
     def test_rejects_config_different_from_packed_kernel(self):
         self.pack(stale_config=True)

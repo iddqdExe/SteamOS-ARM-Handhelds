@@ -167,6 +167,8 @@ def check_artifacts(lockfile, kernel_dir, rootfs=None):
     if ('bin/busybox' not in entries or hashlib.sha256(entries['bin/busybox'][1]).hexdigest()
             != lock['toolchain']['busybox_sha256']):
         raise ValueError('initramfs BusyBox SHA256 mismatch')
+    if entries['bin/busybox'][0][1] & 0o170000 != 0o100000 or not entries['bin/busybox'][0][1] & 0o111:
+        raise ValueError('initramfs BusyBox is not executable')
     inputs = {entry['id']: entry for entry in lock['inputs']}
     fwroot = Path(rootfs) / 'usr/lib/firmware' if rootfs else folder / 'firmware'
     builtins = re.search(rb'^CONFIG_EXTRA_FIRMWARE="([^"]*)"$', config, re.M)

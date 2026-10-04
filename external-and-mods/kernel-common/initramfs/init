@@ -156,6 +156,8 @@ if [ -n "$rootdev" ] && mount -t ext4 -o rw "$rootdev" /newroot; then
     d=/newroot/usr/lib/steamos-arm
     u=/newroot/usr/lib/systemd/system
     mkdir -p "$d" "$u/multi-user.target.wants"
+    mkdir -p /newroot/var/log/journal /newroot/usr/lib/systemd/journald.conf.d
+    printf '[Journal]\nStorage=persistent\nSystemMaxUse=96M\nRuntimeMaxUse=32M\n' > /newroot/usr/lib/systemd/journald.conf.d/steamos-arm-debug.conf
     cp /bootdebug "$d/bootdebug" && chmod 0755 "$d/bootdebug"
     printf '[Unit]\nDescription=Copy boot logs to the FAT partition (debug)\nAfter=local-fs.target\n\n[Service]\nType=simple\nExecStart=/usr/lib/steamos-arm/bootdebug\n' > "$u/steamos-arm-bootdebug.service"
     ln -sf ../steamos-arm-bootdebug.service "$u/multi-user.target.wants/steamos-arm-bootdebug.service"

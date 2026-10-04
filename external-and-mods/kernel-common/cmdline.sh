@@ -21,7 +21,10 @@ build_cmdline() {
   local -a soc
   read -ra soc <<<"${CMDLINE_SOC}"
   parts+=("${soc[@]}")
-  if [[ "${CMDLINE_QUIET:-1}" == 1 ]]; then
+  if [[ "${SOC:-}" == sm8550 && "${SM8550_RECIPE:-}" == 7.2 ]]; then
+    # RP6 diagnostics stay enabled after acceptance, as requested.
+    parts+=(console=tty0 loglevel=7 systemd.show_status=1 steamos.debug=1)
+  elif [[ "${CMDLINE_QUIET:-1}" == 1 ]]; then
     parts+=(quiet loglevel=0 systemd.show_status=0 rd.udev.log_level=0
             logo.nologo vt.global_cursor_default=0)
   else
