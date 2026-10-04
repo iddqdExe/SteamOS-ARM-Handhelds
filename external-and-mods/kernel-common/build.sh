@@ -338,12 +338,16 @@ install_output() {
 
 main() {
   if [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-7.1}" == 7.2 ]]; then
+    [[ "${1:-}" != --repack-boot ]] || die "RP6 locked bundle requires a full rebuild; repack would reuse stale source/modules"
+    [[ "$SM8550_KERNEL" == rocknix ]] || die "RP6 7.2 recipe requires SM8550_KERNEL=rocknix"
+    [[ "$DTBS" == "qcs8550-retroidpocket-rp6 qcs8550-retroidpocket-rp6-top-dpad" ]] \
+      || die "RP6 7.2 recipe requires both RP6 DTBs only"
     [[ "$(gcc -dumpversion | cut -d. -f1)" == 15 ]] || die "RP6 7.2.8 requires GCC 15"
     python3 "${PORT_ROOT}/scripts/check-rp6-kernel.py" inputs \
       --lock "${SOC_DIR}/recipe-7.2.lock.json" --cache "$CACHE" \
       --frame "${FRAME_FW_DIR:-/work/rootfs-sm8550/opt/stock-steamos}" \
       --rocknix "$ROCKNIX_DIR" --toolchain-id "${RP6_BUILDER_IMAGE:-}" \
-      --busybox /bin/busybox || die "locked kernel inputs rejected"
+      --busybox /bin/busybox --chipone-ref "$TDDI_REF" || die "locked kernel inputs rejected"
   fi
   if [[ "${1:-}" == --repack-boot ]]; then
     [[ -s "$SRC/arch/arm64/boot/Image" ]] || die "no previously built kernel Image"

@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import tempfile
@@ -84,6 +85,32 @@ class KernelInputsTests(unittest.TestCase):
         r = subprocess.run(['bash', '-c', 'SM8550_RECIPE=typo; source "$1"', 'fixture',
                             str(REPO / 'external-and-mods/kernel-sm8550/soc.env')], capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
+
+    def test_recipe_7_2_defaults_to_both_rp6_trees(self):
+        r = subprocess.run(['bash', '-c', 'SM8550_RECIPE=7.2; unset DTBS_OVERRIDE SM8550_KERNEL; source "$1"; printf "%s" "$DTBS"',
+                            'fixture', str(REPO / 'external-and-mods/kernel-sm8550/soc.env')],
+                           capture_output=True, text=True, check=True)
+        self.assertEqual(r.stdout.split(), ['qcs8550-retroidpocket-rp6', 'qcs8550-retroidpocket-rp6-top-dpad'])
+
+    def test_recipe_7_2_defaults_to_rocknix_cmdline(self):
+        r = subprocess.run(['bash', '-c', 'SM8550_RECIPE=7.2; unset SM8550_KERNEL; source "$1"; printf "%s" "$SM8550_KERNEL"',
+                            'fixture', str(REPO / 'external-and-mods/kernel-sm8550/soc.env')],
+                           capture_output=True, text=True, check=True)
+        self.assertEqual(r.stdout, 'rocknix')
+
+    def test_rejects_chipone_ref_override(self):
+        self.lock['inputs'][2]['path'] = 'chipone_tddi-' + 'a'*40 + '.tar.gz'
+        (self.cache / 'chipone').rename(self.cache / self.lock['inputs'][2]['path'])
+        r = self.invoke('--chipone-ref', 'b'*40)
+        self.assertNotEqual(r.returncode, 0); self.assertIn('chipone ref', r.stderr)
+        self.assertEqual(self.invoke('--chipone-ref', 'a'*40).returncode, 0)
+
+    @unittest.skipUnless(platform.system() == 'Linux' and platform.machine() == 'aarch64', 'needs ARM64 Linux builder')
+    def test_repack_refuses_to_mix_an_old_bundle(self):
+        r = subprocess.run(['bash', str(REPO / 'external-and-mods/kernel-common/build.sh'), 'sm8550', '--repack-boot'],
+                           env={**os.environ, 'SM8550_RECIPE': '7.2', 'SM8550_KERNEL': 'rocknix'},
+                           capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0); self.assertIn('full rebuild', r.stderr)
 
     def test_donor_patch_change_invalidates_source_marker(self):
         self.assertTrue(TOOL.is_file(), 'input checker/fingerprint not implemented')

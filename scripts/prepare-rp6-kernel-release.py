@@ -77,7 +77,28 @@ def replace_directory(source, dest):
     sealed.run('rsync', '-aHAX', '--delete', str(source) + '/', str(dest) + '/')
 
 
-def build(recipe_path, kernel_dir, image, package, version):
+@contextmanager
+def package_staging(final):
+    staged = final.with_name(final.name + '.staged')
+    paths = [staged, staged.with_name(staged.name + '.part'), staged.with_name(staged.name + '.sha256')]
+    if any(p.exists() or p.is_symlink() for p in paths): raise ValueError('staged package already exists')
+    try:
+        yield staged
+    finally:
+        for path in paths:
+            if path.is_file() and not path.is_symlink(): path.unlink()
+
+
+def publish_staged_package(staged, final):
+    checksum = final.with_name(final.name + '.sha256')
+    if final.exists() or final.is_symlink() or checksum.exists() or checksum.is_symlink():
+        raise ValueError('package output already exists')
+    digest = release.digest(staged)
+    os.replace(staged, final)
+    with checksum.open('x') as handle: handle.write(digest + '  ' + final.name + '\n')
+
+
+def _build(recipe_path, kernel_dir, image, package, version, final_package):
     paths = sealed.output_paths(image, package)
     if not sys.platform.startswith('linux') or os.geteuid() != 0:
         raise ValueError('Linux/root required')
@@ -160,9 +181,10 @@ def build(recipe_path, kernel_dir, image, package, version):
             sealed.run('fsck.fat' if name == 'boot' else 'e2fsck', '-n', loop)
             filesystems[name] = 'passed-read-only'
         finally: sealed.run('losetup', '-d', loop)
+    publish_staged_package(package, final_package)
     os.replace(partial, image)
     final = {**manifest, 'build_manifest_sha256': release.digest(manifest_path),
-             'outputs': {'image': release.output_artifact(image), 'package': release.output_artifact(package),
+             'outputs': {'image': release.output_artifact(image), 'package': release.output_artifact(final_package),
                          'root_inventory': release.output_artifact(inventory_path)}}
     release.save(image.with_name(image.name + '.release.json'), final)
     report = {'source': source, 'assembly': assembly, 'root_delta': delta, 'boot_delta': boot_delta,
@@ -172,6 +194,13 @@ def build(recipe_path, kernel_dir, image, package, version):
     release.save(image.with_name(image.name + '.validation.json'), report)
     image.with_name(image.name + '.sha256').write_text(final['outputs']['image']['sha256'] + '  ' + image.name + '\n')
     print(json.dumps(report, indent=2), flush=True)
+
+
+def build(recipe_path, kernel_dir, image, package, version):
+    sealed.output_paths(image, package)
+    package.parent.mkdir(parents=True, exist_ok=True)
+    with package_staging(package) as staged:
+        _build(recipe_path, kernel_dir, image, staged, version, package)
 
 
 def main():

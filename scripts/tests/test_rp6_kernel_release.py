@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -33,6 +34,26 @@ class KernelReleasePolicyTests(unittest.TestCase):
         after['boot.ini'] = {'sha256': 'changed'}
         with self.assertRaisesRegex(ValueError, 'BOOT'):
             self.tool.assert_boot_delta(before, after)
+
+    def test_late_failure_leaves_no_published_package(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            final = Path(tmp) / 'candidate.tar.gz'
+            with self.assertRaisesRegex(ValueError, 'late filesystem failure'):
+                with self.tool.package_staging(final) as staged:
+                    staged.write_bytes(b'checked package')
+                    staged.with_name(staged.name+'.sha256').write_text('staged checksum')
+                    raise ValueError('late filesystem failure')
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_package_is_published_after_validation_with_final_checksum_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            final = Path(tmp) / 'candidate.tar.gz'
+            with self.tool.package_staging(final) as staged:
+                staged.write_bytes(b'validated package')
+                self.assertFalse(final.exists())
+                self.tool.publish_staged_package(staged, final)
+            self.assertEqual(final.read_bytes(), b'validated package')
+            self.assertTrue(final.with_name(final.name+'.sha256').read_text().endswith('  candidate.tar.gz\n'))
 
 
 if __name__ == '__main__': unittest.main()

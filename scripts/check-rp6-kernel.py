@@ -34,7 +34,7 @@ def sha256(path):
     return h.hexdigest()
 
 
-def check_inputs(lockfile, cache, frame, rocknix, toolchain_id=None, busybox=None):
+def check_inputs(lockfile, cache, frame, rocknix, toolchain_id=None, busybox=None, chipone_ref=None):
     lock = json.loads(Path(lockfile).read_text())
     if (lock.get('format') != 'rp6-kernel-inputs-1' or lock.get('kernel') != '7.2.8'
             or lock.get('recipe') != '7.2'):
@@ -43,6 +43,10 @@ def check_inputs(lockfile, cache, frame, rocknix, toolchain_id=None, busybox=Non
     ids = [e.get('id') for e in entries]
     if set(ids) != REQUIRED or len(ids) != len(REQUIRED):
         raise ValueError('incomplete or duplicate kernel inputs')
+    if chipone_ref is not None:
+        chipone = next(e for e in entries if e['id'] == 'chipone')
+        if not re.fullmatch('[0-9a-f]{40}', chipone_ref) or chipone['path'] != f'chipone_tddi-{chipone_ref}.tar.gz':
+            raise ValueError('effective chipone ref differs from locked archive')
     roots = {'cache': Path(cache).resolve(), 'frame': Path(frame).resolve()}
     for entry in entries:
         name = entry['id']; rel = Path(entry.get('path', ''))
@@ -196,6 +200,7 @@ def main():
         inputs.add_argument('--' + option, required=True)
     inputs.add_argument('--toolchain-id')
     inputs.add_argument('--busybox')
+    inputs.add_argument('--chipone-ref')
     fp = commands.add_parser('fingerprint')
     for option in ('soc', 'common', 'rocknix', 'patch-dirs', 'skips', 'dtbs'):
         fp.add_argument('--' + option, required=True)
@@ -207,7 +212,7 @@ def main():
     try:
         if args.command == 'inputs':
             print(json.dumps(check_inputs(args.lock, args.cache, args.frame, args.rocknix,
-                                          args.toolchain_id, args.busybox)))
+                                          args.toolchain_id, args.busybox, args.chipone_ref)))
         elif args.command == 'fingerprint':
             print(fingerprint(args.soc, args.common, args.rocknix,
                               args.patch_dirs.split(), args.skips.split(), args.dtbs.split()))
