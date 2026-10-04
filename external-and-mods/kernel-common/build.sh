@@ -116,7 +116,9 @@ prepare_source() {
         log "skip $(basename "$p") (PATCH_SKIP)"; continue
       fi
       log "patch $(basename "$d")/$(basename "$p")"
-      patch -d "$SRC" -p1 -N --no-backup-if-mismatch -s <"$p" \
+      local verbosity=(-s)
+      [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-7.1}" == 7.2 ]] && verbosity=(--verbose)
+      patch -d "$SRC" -p1 -N --batch --no-backup-if-mismatch "${verbosity[@]}" <"$p" \
         || die "patch failed: $p"
     done
   done
@@ -324,6 +326,11 @@ install_output() {
   cp "${SRC}/.config" "$o/config-${KREL}"
   cp "${SRC}/System.map" "$o/System.map-${KREL}"
   pack_kernel_img "$o/boot/KERNEL"
+  if [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-7.1}" == 7.2 ]]; then
+    python3 "${PORT_ROOT}/scripts/check-rp6-kernel.py" artifacts \
+      --lock "${SOC_DIR}/recipe-7.2.lock.json" --kernel-dir "$o" \
+      >"${o}/kernel-validation.json" || die "kernel bundle validation failed"
+  fi
   ln -sfn "$KREL" "${OUT_BASE}/current"
   log "done: $o"
   ls -la "$o/boot" >&2

@@ -165,6 +165,9 @@ class TouchTests(unittest.TestCase):
             source = subprocess.check_output(['dtc', '-q', '-I', 'dtb', '-O', 'dts', str(base)], text=True)
             # Keep real labels for the existing source append, independent of helper code.
             source = source.replace('regulator {', 'vdd_disp_2v8: regulator {').replace('display {', 'mdss_dsi0: display {').replace('i2c@98c000 {', 'i2c_hub_3: i2c@98c000 {')
+            # UP-03 adds a reference to the real SD controller; include it
+            # in this small synthetic board while still testing the touch bus.
+            source += '\n/ { sdhc_2: mmc { sdhci-caps-mask = <3 0>; }; };\n'
             append = (REPO / 'external-and-mods/kernel-sm8550/dts/qcs8550-retroidpocket-rp6.dts.append').read_text()
             tree = subprocess.run(['dtc', '-q', '-I', 'dts', '-O', 'dtb'], input=(source + append).encode(), capture_output=True, check=True).stdout
             self.assertEqual(prop(tree, BUS, 'clock-frequency', 'i'), '400000')
