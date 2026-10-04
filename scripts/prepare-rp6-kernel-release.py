@@ -33,6 +33,10 @@ release = sealed.release
 
 
 def assert_root_delta(before, after):
+    removed_firmware = {p for p in before.keys() - after.keys()
+                        if p == 'usr/lib/firmware' or p.startswith('usr/lib/firmware/')}
+    if removed_firmware:
+        raise ValueError('accepted firmware removed: ' + ', '.join(sorted(removed_firmware)[:20]))
     changed = {p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
     def allowed(path):
         return (path == 'usr/share/steamos-arm/release-manifest.json' or
@@ -71,10 +75,11 @@ def image_mounts(image):
         shutil.rmtree(folder)
 
 
-def replace_directory(source, dest):
+def replace_directory(source, dest, *, delete=True):
     if source.is_symlink() or not source.is_dir() or dest.is_symlink() or not dest.is_dir():
         raise ValueError('kernel payload paths must be real directories: ' + str(dest))
-    sealed.run('rsync', '-aHAX', '--delete', str(source) + '/', str(dest) + '/')
+    options = ['--delete'] if delete else []
+    sealed.run('rsync', '-aHAX', *options, str(source) + '/', str(dest) + '/')
 
 
 @contextmanager
@@ -135,7 +140,9 @@ def _build(recipe_path, kernel_dir, image, package, version, final_package):
             raise ValueError('accepted base KERNEL SHA256 mismatch')
         before = sealed.tree_inventory(root); before_boot = sealed.tree_inventory(boot_dir)
         replace_directory(kernel_dir / 'modules', root / 'usr/lib/modules')
-        replace_directory(kernel_dir / 'firmware', root / 'usr/lib/firmware')
+        # The kernel bundle supplies GPU/Wi-Fi blobs, not a complete distro
+        # firmware tree. Retain accepted Bluetooth and other firmware.
+        replace_directory(kernel_dir / 'firmware', root / 'usr/lib/firmware', delete=False)
         boot = load('rp6_kernel_boot', 'external-and-mods/ufs-install/ufs-bootimg.py')
         kernel = boot.BootImg((kernel_dir / 'boot/KERNEL').read_bytes())
         with partial.open('rb') as stream:

@@ -20,6 +20,20 @@ class KernelReleasePolicyTests(unittest.TestCase):
                  'usr/lib/firmware/qcom/a740_sqe.fw': {'sha256': 'new'}}
         self.assertEqual(len(self.tool.assert_root_delta(before, after)), 3)
 
+    def test_existing_bluetooth_firmware_cannot_disappear(self):
+        before = {'usr/lib/firmware/qca/hmtbtfw20.tlv': {'kind': 'file', 'sha256': 'accepted-bt'},
+                  'usr/lib/firmware/qcom/a740_sqe.fw': {'kind': 'file', 'sha256': 'old-gpu'}}
+        after = {'usr/lib/firmware/qcom/a740_sqe.fw': {'kind': 'file', 'sha256': 'new-gpu'}}
+        with self.assertRaisesRegex(ValueError, 'firmware removed'):
+            self.tool.assert_root_delta(before, after)
+
+    def test_firmware_overlay_may_update_gpu_while_preserving_bluetooth(self):
+        before = {'usr/lib/firmware/qca/hmtbtfw20.tlv': {'kind': 'file', 'sha256': 'accepted-bt'},
+                  'usr/lib/firmware/qcom/a740_sqe.fw': {'kind': 'file', 'sha256': 'old-gpu'}}
+        after = {'usr/lib/firmware/qca/hmtbtfw20.tlv': {'kind': 'file', 'sha256': 'accepted-bt'},
+                 'usr/lib/firmware/qcom/a740_sqe.fw': {'kind': 'file', 'sha256': 'new-gpu'}}
+        self.assertEqual(self.tool.assert_root_delta(before, after), ['usr/lib/firmware/qcom/a740_sqe.fw'])
+
     def test_runtime_settings_and_metadata_changes_are_rejected(self):
         for path in ('usr/bin/gamescope', 'usr/lib/libvulkan_freedreno.so', 'opt/fex/bin/FEXInterpreter',
                      'var/lib/overlays/etc/upper/konkrd.conf', 'usr/lib/konkr/konkr-standby', 'usr/lib'):
