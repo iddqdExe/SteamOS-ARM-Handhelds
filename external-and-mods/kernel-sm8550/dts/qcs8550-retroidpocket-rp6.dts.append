@@ -34,3 +34,10 @@
 		/delete-property/ no-regmap-bulk-read;
 	};
 };
+
+/* UP-03: SteamOS ARM 18667d70bc8ddf6a49f7eb64ee8cc64cc54842a0.
+ * Permit UHS SDR104 on RP6 only; negotiated mode still depends on the card.
+ */
+&sdhc_2 {
+	/delete-property/ sdhci-caps-mask;
+};
