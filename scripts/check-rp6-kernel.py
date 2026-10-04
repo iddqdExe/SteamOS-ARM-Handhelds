@@ -114,6 +114,8 @@ def check_artifacts(lockfile, kernel_dir, rootfs=None):
     image = boot.BootImg(kernel.read_bytes())
     if image.id != image.expected_id() or image.ramdisk != b'dummy':
         raise ValueError('KERNEL must have valid ID and an embedded initramfs')
+    if image.kernel[:3] != b'\x1f\x8b\x08' or image.kernel[3] not in (0, 8):
+        raise ValueError('gzip flags unsupported by Qualcomm ABL')
     compressed, trees = paddles.split_payload(image.kernel)
     dtb_offset = len(compressed)
     for tree in trees:

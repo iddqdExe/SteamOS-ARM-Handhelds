@@ -33,19 +33,23 @@ def align_appended_dtbs(payload: bytes) -> bytes:
         raise ValueError('truncated gzip kernel')
     compressed = payload[:len(payload)-len(z.unused_data)]
     tail = z.unused_data
+    if compressed[:3] != b'\x1f\x8b\x08' or compressed[3] not in (0, 8):
+        raise ValueError('gzip flags unsupported by Qualcomm ABL')
     if not tail:
         raise ValueError('missing appended DTBs')
     needed = -len(compressed) % 8
     if needed:
-        if compressed[:3] != b'\x1f\x8b\x08' or compressed[3] != 0:
-            raise ValueError('unaligned gzip kernel requires a plain gzip header')
-        # RFC1952 FEXTRA: unknown subfields are skipped by decompressors.
-        # Padding inside the gzip header keeps DTBs immediately after EOF;
-        # the deflate stream, Image, CRC and ISIZE stay byte-for-byte intact.
-        added = needed if needed >= 6 else needed + 8
-        extra = b'AL' + struct.pack('<H', added-6) + b'\0'*(added-6)
-        compressed = (compressed[:3] + b'\x04' + compressed[4:10] +
-                      struct.pack('<H', len(extra)) + extra + compressed[10:])
+        # Qualcomm ABL skips exactly 10 header bytes plus optional FNAME.
+        # It does not skip FEXTRA/FHCRC/FCOMMENT before raw inflate. A short
+        # filename aligns the DTBs without changing deflate, CRC or ISIZE.
+        if compressed[3] == 0:
+            compressed = (compressed[:3] + b'\x08' + compressed[4:10] +
+                          b'A'*(needed-1) + b'\0' + compressed[10:])
+        else:
+            end = compressed.index(b'\0', 10, min(len(compressed), 266))
+            if end-10+1+needed >= 256:
+                raise ValueError('gzip filename exceeds Qualcomm ABL limit')
+            compressed = compressed[:end] + b'A'*needed + compressed[end:]
     trees = []
     while tail:
         if len(tail) < 40 or tail[:4] != b'\xd0\x0d\xfe\xed':
