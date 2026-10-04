@@ -290,8 +290,10 @@ pack_kernel_img() {
   cmdline="$(bash -c "source '${SOC_DIR}/soc.env'; source '${HERE}/cmdline.sh'; build_cmdline 00000000-02")"
   local rd=(--ramdisk "$INITRD")
   [[ "${EMBED_INITRAMFS:-0}" == 1 ]] && rd=()  # dummy ramdisk, like ROCKNIX
+  local alignment=()
+  [[ "$SOC" == sm8550 && "${SM8550_RECIPE:-}" == 7.2 ]] && alignment=(--align-dtbs)
   python3 "${HERE}/mkbootimg-v0.py" --kernel "$payload" "${rd[@]}" \
-    --cmdline "$cmdline" --out "$out"
+    "${alignment[@]}" --cmdline "$cmdline" --out "$out"
   rm -f "$payload"
   md5sum "$out" | awk '{print $1"  KERNEL"}' >"$(dirname "$out")/KERNEL.md5"
 }

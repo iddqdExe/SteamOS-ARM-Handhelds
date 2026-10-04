@@ -33,6 +33,8 @@ Read-only диагностика: `sudo /usr/lib/konkr/konkr-sleep-state diagnos
 
 Новый kernel/modules/firmware/initramfs и точный whitelist runtime UP-04 устанавливаются в чистый образ из принятого UP-03 R2. Firmware из R2 не удаляется; прочие root bytes/owners/modes/xattrs, HOME и partition table проверяются на сохранение. Это чистая установка согласованного образа, не полная пересборка SteamOS userspace. Артефакты и доказательства — material workspace `preparation/upstream-porting/UP-04/`.
 
+RP6 KERNEL выравнивает каждый appended DTB на8 байт для чтения libfdt прямо в payload. Дополнение стандартного gzip FEXTRA и trailing FDT space сохраняет deflate/Image, все DT properties, reservations и внутренние offsets; DTBs не проходят DTS roundtrip. Artifact validator отклоняет невыравненный boot file. Первоначальный UP04 wrapper вызывал `FDT_ERR_ALIGNMENT` в libfdt; связь с чёрным экраном проверяется аппаратно отдельно.
+
 Пользователь отказался от backup и разрешил полную чистую запись вставленной SD-карты. Перед записью сверяются идентичность/размер носителя и image SHA256; после — полный readback записанной области, KERNEL и новая geometry. Остаток старой HOME не сохраняется как раздел или пользовательская установка. Android/ABL не меняются.
 
 После установки: первый и второй cold boot, Game Mode/Desktop, touch/управление/L4/R4/Volume Up, звук, Wi-Fi/Bluetooth и игра; затем 20 последовательных s2idle cycles, игра после resume, Wi-Fi on/off, charger matrix и длительный сон. Проверять фактические PM suspend counters и ранние wake IRQ. Улучшение автономности до этих замеров не заявляется. CI из предыдущего этапа не возобновляется.

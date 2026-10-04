@@ -115,6 +115,11 @@ def check_artifacts(lockfile, kernel_dir, rootfs=None):
     if image.id != image.expected_id() or image.ramdisk != b'dummy':
         raise ValueError('KERNEL must have valid ID and an embedded initramfs')
     compressed, trees = paddles.split_payload(image.kernel)
+    dtb_offset = len(compressed)
+    for tree in trees:
+        if dtb_offset % 8:
+            raise ValueError('unaligned appended DTB: offset ' + str(dtb_offset))
+        dtb_offset += len(tree)
     raw = zlib.decompress(compressed, 31)
     match = re.search(rb'Linux version (\S+)', raw)
     if not match or not match[1].decode().startswith(lock['kernel'] + '-'):

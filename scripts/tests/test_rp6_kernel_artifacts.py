@@ -61,7 +61,7 @@ class KernelArtifactTests(unittest.TestCase):
         (self.bundle/'boot').mkdir()
         self.pack()
 
-    def pack(self, *, missing_firmware=False, stale_config=False):
+    def pack(self, *, missing_firmware=False, stale_config=False, aligned=True):
         cpio=load('kernel_cpio',REPO/'scripts/repack-rp6-initramfs.py')
         entries=[]
         for inode,(name,data) in enumerate(self.init.items(),1):
@@ -72,9 +72,12 @@ class KernelArtifactTests(unittest.TestCase):
         for path,data in self.firmware.items():
             if not path.startswith('qcom/') and not (missing_firmware and path.endswith('board-2.bin')):
                 embedded+=path.encode()+b'\0'+data
-        payload=self.folder/'payload';payload.write_bytes(gzip.compress(embedded,mtime=0)+b''.join(self.trees))
+        compressed=gzip.compress(embedded,mtime=0)
+        if not aligned and len(compressed)%8==0:
+            compressed=compressed[:3]+b'\x08'+compressed[4:10]+b'\0'+compressed[10:]
+        payload=self.folder/'payload';payload.write_bytes(compressed+b''.join(self.trees))
         subprocess.run(['python3',str(REPO/'external-and-mods/kernel-common/mkbootimg-v0.py'),
-                        '--kernel',str(payload),'--out',str(self.bundle/'boot/KERNEL')],check=True,stdout=subprocess.DEVNULL)
+                        '--kernel',str(payload),'--out',str(self.bundle/'boot/KERNEL')]+(['--align-dtbs'] if aligned else []),check=True,stdout=subprocess.DEVNULL)
 
     def invoke(self):
         return subprocess.run(['python3',str(TOOL),'artifacts','--lock',str(self.lockfile),
@@ -83,6 +86,10 @@ class KernelArtifactTests(unittest.TestCase):
     def test_complete_matching_bundle_passes(self):
         r=self.invoke();self.assertEqual(r.returncode,0,r.stderr)
         self.assertEqual(json.loads(r.stdout)['kernel_release'],self.rel)
+
+    def test_rejects_unaligned_appended_dtb(self):
+        self.pack(aligned=False)
+        r=self.invoke();self.assertNotEqual(r.returncode,0);self.assertIn('unaligned appended DTB',r.stderr)
 
     def test_rejects_mismatched_module_vermagic(self):
         self.mod.write_bytes(self.mod.read_bytes().replace(self.rel.encode(),b'7.0.14-edge-sm8550'))
