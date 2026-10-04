@@ -2,6 +2,7 @@
 """Restore explicitly provisioned RP6 SSH access without passwords or root login."""
 import argparse
 import base64
+import json
 import os
 from pathlib import Path
 import pwd
@@ -121,7 +122,9 @@ def restore(configure=False):
     configure = configure or not CONFIGURED.exists()
     if configure:
         protected_write('/etc/systemd/system/sshd.service.d/30-rp6-recovery.conf', '[Service]\nRestart=on-failure\nRestartSec=3s\n')
-        protected_write('/etc/systemd/journald.conf.d/30-rp6-debug.conf', '[Journal]\nStorage=persistent\nSystemMaxUse=96M\nRuntimeMaxUse=32M\n')
+        # Vendor system-max-use.conf sorts after numeric prefixes. Keep this
+        # override last so the intended bound is effective on the real distro.
+        protected_write('/etc/systemd/journald.conf.d/zz-rp6-debug.conf', '[Journal]\nStorage=persistent\nSystemMaxUse=96M\nRuntimeMaxUse=32M\n')
         run('systemctl', 'daemon-reload')
         run('hostnamectl', 'set-hostname', 'rp6-steamos')
         run('systemctl', 'enable', 'sshd.service')
@@ -142,7 +145,12 @@ def restore(configure=False):
             run('systemctl', 'reset-failed', unit, check=False)
             run('systemctl', 'start', '--no-block', unit)
     fingerprint = run('ssh-keygen', '-lf', '/etc/ssh/ssh_host_ed25519_key.pub', '-E', 'sha256').stdout.strip()
-    addresses = run('hostname', '-I', check=False).stdout.strip()
+    # This distro's GNU hostname has no -I option; ip JSON works on RP6.
+    try:
+        interfaces = json.loads(run('ip', '-j', 'address', 'show', check=False).stdout)
+        addresses = ' '.join(address['local'] for interface in interfaces
+                             for address in interface.get('addr_info', []) if address.get('scope') == 'global')
+    except (ValueError, KeyError): addresses = 'unavailable'
     print('RP6 access restored; hostname=rp6-steamos.local; addresses=' + addresses)
     print('SSH host key: ' + fingerprint)
 

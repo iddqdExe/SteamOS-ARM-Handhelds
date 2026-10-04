@@ -21,7 +21,7 @@ def build(public_key, fingerprint):
         '/usr/lib/systemd/system/rp6-codex-access.service': ((REPO / 'sm8550-overlay/usr/lib/systemd/system/rp6-codex-access.service').read_bytes(), '0644'),
         '/usr/lib/systemd/system/rp6-codex-access.timer': ((REPO / 'sm8550-overlay/usr/lib/systemd/system/rp6-codex-access.timer').read_bytes(), '0644'),
         '/etc/systemd/system/sshd.service.d/30-rp6-recovery.conf': (b'[Service]\nRestart=on-failure\nRestartSec=3s\n', '0644'),
-        '/etc/systemd/journald.conf.d/30-rp6-debug.conf': (b'[Journal]\nStorage=persistent\nSystemMaxUse=96M\nRuntimeMaxUse=32M\n', '0644'),
+        '/etc/systemd/journald.conf.d/zz-rp6-debug.conf': (b'[Journal]\nStorage=persistent\nSystemMaxUse=96M\nRuntimeMaxUse=32M\n', '0644'),
     }
     script = '''#!/usr/bin/env bash
 # RP6 SSH access installer. Contains a PUBLIC client key, never a password.
