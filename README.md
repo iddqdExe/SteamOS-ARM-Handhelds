@@ -19,6 +19,12 @@ Automated source and build checks may run on development computers or CI. They d
 
 See [RP6 scope and test policy](docs/RP6-SCOPE.md).
 
+## Primary RP6 kernel
+
+The primary SM8550 kernel in `main` is **7.2.8-sm8550-steamos**, from accepted UP-03. For `SOC=sm8550`, kernel builds select recipe 7.2/ROCKNIX and image builds use `kernel-sm8550/output/current` by default. GCC 15 and the locked Frame firmware inputs remain required. Select `SM8550_RECIPE=7.1` explicitly for the legacy recipe, or `SM8550_KERNEL=prebuilt` for an existing legacy bundle.
+
+UP-03 acceptance covers the RP6/12 GB/microSD checks in [RP6-UP-03.ru.md](docs/RP6-UP-03.ru.md). Known warnings and unperformed sleep/resume, numerical performance, CI and physical R2 delivery/rollback checks remain documented. Making this kernel primary in source does not relabel those checks as passed or publish a new binary release.
+
 ## Development priorities
 
 1. Correct button layout, D-pad, Steam and Quick Access buttons, and independently assignable rear buttons.

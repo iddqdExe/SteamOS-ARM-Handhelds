@@ -86,6 +86,34 @@ class KernelInputsTests(unittest.TestCase):
                             str(REPO / 'external-and-mods/kernel-sm8550/soc.env')], capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
 
+    def test_default_recipe_selects_accepted_rp6_kernel(self):
+        command = 'unset SM8550_RECIPE SM8550_KERNEL DTBS_OVERRIDE; source "$1"; printf "%s\\n" "${SM8550_RECIPE-unset}" "$KVER" "$SM8550_KERNEL" "$FW_BUILTIN" "$DTBS"'
+        r = subprocess.run(['bash', '-c', command, 'fixture',
+                            str(REPO / 'external-and-mods/kernel-sm8550/soc.env')],
+                           capture_output=True, text=True, check=True)
+        self.assertEqual(r.stdout.splitlines(), ['7.2', '7.2.8', 'rocknix', '1',
+                         'qcs8550-retroidpocket-rp6 qcs8550-retroidpocket-rp6-top-dpad'])
+
+    def test_explicit_legacy_recipe_keeps_legacy_selection(self):
+        command = 'SM8550_RECIPE=7.1; unset SM8550_KERNEL; source "$1"; printf "%s\\n" "$KVER" "$SM8550_KERNEL"'
+        r = subprocess.run(['bash', '-c', command, 'fixture',
+                            str(REPO / 'external-and-mods/kernel-sm8550/soc.env')],
+                           capture_output=True, text=True, check=True)
+        self.assertEqual(r.stdout.splitlines(), ['7.1.2', 'prebuilt'])
+
+    def test_image_builder_uses_the_selected_kernel_by_default(self):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ['SM8550_RECIPE', 'SM8550_KERNEL', 'IMAGE_KERNEL_OUT', 'KERNEL_OUT']}
+        env.update(SOC='sm8550', STEAMOS_WORK='/fixture-work')
+        script = str(REPO / 'make-steamos-sm8650.sh')
+        r = subprocess.run(['bash', script, '--help'], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('IMAGE_KERNEL_OUT (default: /fixture-work/kernel-sm8550/output/current)', r.stdout)
+        r = subprocess.run(['bash', script, '--help'], env={**env, 'SM8550_RECIPE': '7.1'},
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('IMAGE_KERNEL_OUT (default: /fixture-work/kernel-prebuilt/7.0.14-edge-sm8550)', r.stdout)
+
     def test_recipe_7_2_defaults_to_both_rp6_trees(self):
         r = subprocess.run(['bash', '-c', 'SM8550_RECIPE=7.2; unset DTBS_OVERRIDE SM8550_KERNEL; source "$1"; printf "%s" "$DTBS"',
                             'fixture', str(REPO / 'external-and-mods/kernel-sm8550/soc.env')],
