@@ -8,7 +8,7 @@
 
 Дополнительный 0030 балансирует отключение non-console UART IRQ при ошибке `uart_suspend_port`; без него отменённый suspend мог оставить gamepad отключённым. CONFIG_PM_DEBUG/PM_SLEEP_DEBUG/PM_ADVANCED_DEBUG включены для аппаратной диагностики.
 
-В userspace перенесены recovery guards модуля 2 для частот, звука, Wi-Fi и частичных отказов. Принятый в UP-03 путь DSI readiness перед восстановлением яркости сохранён; PWM-only правило старого кандидата модуля 2 не заменяет его. Принятый daemon/CPU profiles/fan/thermal failsafe наследуются побайтно из R2 image, без замены иной исходной версией.
+В userspace перенесены recovery guards модуля 2 для частот, звука, Wi-Fi и частичных отказов. Принятый в UP-03 путь DSI readiness перед восстановлением яркости сохранён; PWM-only правило старого кандидата модуля 2 не заменяет его. Принятые CPU profiles/fan/thermal failsafe сохраняются из R2 image. В принятом daemon точечно добавляется защита кнопки питания после kernel resume; полной замены daemon исходной версией донора нет.
 
 Standby замораживает InputPlumber после открытия отдельного power-key reader. При partial freeze thaw пытается восстановить все затронутые cgroups. S2idle использует root-only recovery record с исходными loaded Wi-Fi modules, touch bindings и wakeup settings; ошибка pre запускает recovery, ошибка post сохраняет запись и блокирует следующий сон. `ExecStopPost` выполняет recovery также после неудачного запуска systemd подготовки. Отчёт содержит фактические suspend counters, wake IRQ, battery и IRQ delta; rate выводится только при интервале >=3 минут и разряде на обоих концах. Wh/h берётся только из energy_now, без подмены оценкой charge*voltage.
 
@@ -44,3 +44,13 @@ RP6 KERNEL выравнивает каждый appended DTB на8 байт дл�
 После установки: первый и второй cold boot, Game Mode/Desktop, touch/управление/L4/R4/Volume Up, звук, Wi-Fi/Bluetooth и игра; затем 20 последовательных s2idle cycles, игра после resume, Wi-Fi on/off, charger matrix и длительный сон. Проверять фактические PM suspend counters и ранние wake IRQ. Улучшение автономности до этих замеров не заявляется. CI из предыдущего этапа не возобновляется.
 
 Возврат к принятой базе — чистая запись уже существующего UP-03 R2 image с matching modules/firmware. Новые backups не создаются; прежние данные карты не восстанавливаются. UP-04 device acceptance и physical rollback остаются отдельными проверками.
+
+## Исправление повторного сна после DuckTales (2026-10-05)
+
+После шести успешных menu/charger циклов пользователь сообщил чёрный экран при пробуждении DuckTales (app237630). Приставка восстановилась без перезагрузки после повторного питания и Volume Up. Журнал показал новые запросы suspend через 1.7–1.9 секунды после resume; последний wake IRQ200 соответствует Volume Up. Ошибок kernel suspend нет, boot ID не менялся.
+
+Запечатанный UP03 daemon (`1c1c25761996b6c5042ff1e3916bf787b547705ef372e74f8c0cfa4f7efa13d9`) имеет grace только для standby. Из-за отсутствия CLOCK_BOOTTIME offset wake press после s2idle передаётся в Steam как новый shortpowerpress. Поведенческий тест выполняет настоящий delivered power loop с воспроизведёнными часами и событиями: до исправления получается лишний запрос сна.
+
+`fix-rp6-s2idle-wake.py` допускает только этот SHA или уже исправленный SHA, вставляет две точные группы строк, сохраняет owner/mode/xattrs и проверяет результат (`d6eef68a80d88c08a27501b94a3f6872b6bdcbac2cc1e0a8eb1f68e290c8667e`). CLOCK_BOOTTIME−MONOTONIC отмечает выход из kernel sleep; прежнее окно 2.5 секунды игнорирует накопленную кнопку пробуждения. Незавершённый power press сбрасывается, событие resume записывается в постоянный журнал. Изменение попадает в clean image и update package через sealed assembler; ROOT delta допускает только эту пару SHA с неизменными метаданными daemon.
+
+По решению пользователя серия ограничена пятью kernel циклами (включая charging), затем отдельно выполнен battery-only sleep 767 секунд. Это не 20-cycle, overnight или точный power measurement. Game-resume проверка остаётся открытой до аппаратного повторения с исправленным daemon; холодный повторный boot также ещё не проверен.

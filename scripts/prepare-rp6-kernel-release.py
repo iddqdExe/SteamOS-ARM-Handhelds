@@ -30,6 +30,7 @@ def load(name, path):
 sealed = load('rp6_sealed_release', 'scripts/prepare-rp6-release.py')
 kernel_check = load('rp6_kernel_release_check', 'scripts/check-rp6-kernel.py')
 release = sealed.release
+wake_guard = load('rp6_wake_guard', 'scripts/fix-rp6-s2idle-wake.py')
 
 
 # UP-04 has a fixed payload, never a caller-controlled path allowlist.
@@ -80,6 +81,7 @@ def install_access_runtime(root, public_key):
 
 
 def install_power_runtime(root):
+    wake_guard.apply(root / 'usr/lib/konkr/konkrd')
     sealed.run('bash', REPO / 'scripts/install-rp6-power.sh', root)
     for name in POWER_FILES:
         src = (REPO / 'external-and-mods/kernel-common/initramfs/bootdebug' if name.endswith('/bootdebug')
@@ -102,6 +104,12 @@ def assert_root_delta(before, after, *, power_runtime=False, access_runtime=Fals
         raise ValueError('accepted firmware removed: ' + ', '.join(sorted(removed_firmware)[:20]))
     changed = {p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
     def allowed(path):
+        if power_runtime and path == 'usr/lib/konkr/konkrd':
+            old, new = before.get(path, {}), after.get(path, {})
+            return (old.get('sha256') == wake_guard.BASE_SHA256 and
+                    new.get('sha256') == wake_guard.PATCHED_SHA256 and
+                    {k: v for k, v in old.items() if k != 'sha256'} ==
+                    {k: v for k, v in new.items() if k != 'sha256'})
         return (path == 'usr/share/steamos-arm/release-manifest.json' or
                 (power_runtime and path in POWER_FILES | POWER_LINKS.keys()) or
                 (access_runtime and path in ACCESS_FILES.keys() | ACCESS_LINKS.keys() | ACCESS_DIRS | {ACCESS_KEY}) or

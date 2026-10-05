@@ -56,6 +56,19 @@ class KernelReleasePolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'userspace'):
                 self.tool.assert_root_delta({}, {forbidden:{'kind':'file'}}, power_runtime=True)
 
+    def test_daemon_upgrade_allows_only_exact_wake_guard_with_preserved_metadata(self):
+        path='usr/lib/konkr/konkrd'
+        old={'kind':'file','mode':'0755','uid':0,'gid':0,'xattrs':{},
+             'sha256':'1c1c25761996b6c5042ff1e3916bf787b547705ef372e74f8c0cfa4f7efa13d9'}
+        new={**old,'sha256':'d6eef68a80d88c08a27501b94a3f6872b6bdcbac2cc1e0a8eb1f68e290c8667e'}
+        self.assertEqual(self.tool.assert_root_delta({path:old},{path:new},power_runtime=True),[path])
+        for bad in ({**new,'sha256':'arbitrary-daemon'}, {**new,'mode':'0644'},
+                    {**new,'uid':1000}, {**new,'xattrs':{'user.test':'changed'}}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError,'userspace'):
+                self.tool.assert_root_delta({path:old},{path:bad},power_runtime=True)
+        with self.assertRaisesRegex(ValueError,'userspace'):
+            self.tool.assert_root_delta({path:old},{path:new})
+
     def test_access_payload_does_not_allow_other_keys_or_system_settings(self):
         for allowed in ('usr/share/steamos-arm/access/codex.pub', 'usr/lib/steamos-arm/rp6-access-restore.py'):
             self.assertEqual(self.tool.assert_root_delta({}, {allowed: {'kind': 'file'}}, access_runtime=True), [allowed])
