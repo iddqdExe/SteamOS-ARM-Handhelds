@@ -1,0 +1,103 @@
+{
+  "format": "rp6-up04-public-acceptance-1",
+  "module": "UP-04",
+  "decision": "accepted",
+  "accepted_on": "2026-10-05",
+  "target": {
+    "model": "Retroid Pocket 6",
+    "soc": "SM8550",
+    "ram_gib": 12,
+    "media": "microSD"
+  },
+  "source_promotion": {
+    "branch": "main",
+    "foundation": "UP-04 on accepted UP-03/01/08",
+    "authorization": "Explicit user instruction to make UP04 the fork base, publish to main and clean project",
+    "kernel": "7.2.8-sm8550-steamos",
+    "recipe": "7.2",
+    "sleep_default": "standby; s2idle explicit opt-in"
+  },
+  "provenance": {
+    "assembly_source_sha": "f644f67182cbc6967efbfa82ef2f72a904cb0675",
+    "kernel_compile_source_sha": "31f8a47ef6c1bdf04e572fb5e70b2110e45fa40d",
+    "donor_sha": "ccefcd50d716690eba6e57df9798f858512af6b7",
+    "usb_pd_donor_sha": "02120f2bc1b34a1ae7203aa28dc3d933e99cbfbc",
+    "documentation_promotion_does_not_change_assembled_bytes": true
+  },
+  "runtime_path": "Clean R2 installation plus checksum-pinned live wake guard; subsequent boot verified",
+  "kernel_sha256": "a5e8fecca3bd890d77b0cc4df5bc2d508300c2b0946c6d898a90fadeb3d1854d",
+  "wake_guard": {
+    "baseline_sha256": "1c1c25761996b6c5042ff1e3916bf787b547705ef372e74f8c0cfa4f7efa13d9",
+    "patched_sha256": "d6eef68a80d88c08a27501b94a3f6872b6bdcbac2cc1e0a8eb1f68e290c8667e",
+    "symptom": "Queued wake power key requested another sleep, causing black screen after game resume",
+    "device_retest": "Passed one kernel cycle after live fix, no repeated suspend; DuckTales process survived"
+  },
+  "accepted_checks": [
+    "R2 full clean image write/readback and Steam boot",
+    "Five short s2idle cycles: four battery plus one charging",
+    "Sound, controls, touch and Wi-Fi after resume confirmed by user",
+    "767-second battery-only sleep with kernel success and post restoration",
+    "DuckTales suspend/resume after wake-key fix",
+    "Subsequent user-reported cold start with new boot ID and Steam running",
+    "Automatic SSH key authentication after wake and subsequent boot, IP and mDNS",
+    "Persistent s2idle selection and exact wake guard retained after boot"
+  ],
+  "diagnostics": {
+    "retained_after_acceptance": true,
+    "kernel_boot_console": true,
+    "persistent_journal_max_mib": 96,
+    "runtime_journal_max_mib": 32
+  },
+  "source_verification": {
+    "tests": 267,
+    "failures": 0,
+    "skips": 0,
+    "environment": "Native ARM64 Linux; actual locked kernel source and RP6 DTBs",
+    "log_sha256": "8028d791207235d6a57404693835db8e5a3fab52d4ea09dd723ec2d61b4a332d",
+    "scope": "Source tests; separate from CI and device acceptance"
+  },
+  "artifacts": [
+    {
+      "bytes": 16447963136,
+      "mode": "0644",
+      "name": "steamos-rp6-up04-20261005-r3.img",
+      "sha256": "60b27302c7dd114da2d05b25211becc7c491b19f635c5846256c7aeb40736f91"
+    },
+    {
+      "bytes": 4366705106,
+      "mode": "0644",
+      "name": "rp6-up04-20261005-r3.tar.gz",
+      "sha256": "453f3e403389f0ef1aeb6f934f8f9286595f702dfc3522a2cd5e9072531dc543"
+    },
+    {
+      "bytes": 8958273,
+      "mode": "0644",
+      "name": "steamos-rp6-up04-20261005-r3.img.root-inventory.json.gz",
+      "sha256": "cd1cdce0400a1ac39f122dda1c50a3e91cdf7a2554752b562004f2f0b177a371"
+    }
+  ],
+  "assembly_validation": {
+    "filesystems": {
+      "boot": "passed-read-only",
+      "home": "passed-read-only",
+      "root": "passed-read-only"
+    },
+    "userspace_delta": "Fixed allowlist including exact daemon SHA pair with metadata preservation",
+    "home_and_partition_table": "unchanged relative to accepted sealed UP03 R2",
+    "kernel_modules_firmware": "validated"
+  },
+  "usb_pd": "Active connector reset not transferred without reproduced RP6 fault; read-only diagnostics included; charging sleep cycle checked",
+  "separate_checks_not_passed_at_acceptance": [
+    "R3 physical clean installation (R2+live guard tested)",
+    "Overnight/multi-hour sleep and precise power consumption",
+    "Broader game/charger/Wi-Fi on-off matrices",
+    "Physical rollback",
+    "CI (still paused)"
+  ],
+  "known_observations": [
+    "Post-boot logs retain firewall backend and KDE desktop-portal errors; no fixes or baseline attribution made in UP04 acceptance",
+    "Prior UP03 hardware warnings remain documented"
+  ],
+  "binary_release_publication": "Not performed by source promotion",
+  "backups": "Declined by user; no new backups created"
+}

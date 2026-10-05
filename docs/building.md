@@ -11,8 +11,10 @@ I build everything in an arm64 Linux VM (Colima on a Mac).
 Valve's files and the Steam client aren't in this repo, the build downloads them. How the pieces fit together is in [HOW-IT-WORKS.md](HOW-IT-WORKS.md).
 
 
-## RP6 primary kernel (accepted UP-03)
+## RP6 primary baseline (accepted UP-04)
 
-For `SOC=sm8550`, the primary recipe is now 7.2 with kernel `7.2.8-sm8550-steamos`, pinned ROCKNIX and GCC15. The image builder defaults to `${STEAMOS_WORK:-/work}/kernel-sm8550/output/current`. Prepare the locked Frame WCN7850 firmware and toolchain as described in [RP6-UP-03.ru.md](RP6-UP-03.ru.md); missing/mismatched inputs still fail the build.
+UP-04 is the source baseline in `main`, including the RP6 suspend/recovery patches, executable initramfs and permanent diagnostics. For `SOC=sm8550`, the primary recipe is 7.2 with kernel `7.2.8-sm8550-steamos`, pinned ROCKNIX and GCC15. The image builder defaults to `${STEAMOS_WORK:-/work}/kernel-sm8550/output/current`. Prepare the locked Frame WCN7850 firmware and toolchain as described in [RP6-UP-03.ru.md](RP6-UP-03.ru.md); missing/mismatched inputs still fail the build.
 
 Use `SM8550_RECIPE=7.1` explicitly for the legacy recipe. An existing legacy prebuilt image bundle can still be selected explicitly with `SM8550_KERNEL=prebuilt` or `IMAGE_KERNEL_OUT`. The legacy path is optional; it is no longer the implicit RP6 image default.
+
+For the sealed accepted-userspace image/update path, use `scripts/prepare-rp6-kernel-release.py` with a locked UP-04 recipe. It applies the checksum-pinned wake guard while preserving the accepted profiles/fan and other userspace. The generic image builder already installs UP-04 power runtime; it is a separate full-userspace build path, not the tested sealed R3 artifact. Hardware acceptance and exact assembly/kernel source SHAs are in [RP6-UP-04.acceptance.json](RP6-UP-04.acceptance.json).
