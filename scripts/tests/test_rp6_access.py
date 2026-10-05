@@ -73,3 +73,27 @@ class AccessTests(unittest.TestCase):
             tool.install_key(home, KEY)
             self.assertEqual(path.stat().st_ino, original)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_fresh_install_requires_exact_kernel_before_any_configuration(self):
+        spec = importlib.util.spec_from_file_location('installer', REPO / 'scripts/build-rp6-access-installer.py')
+        tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)
+        with tempfile.TemporaryDirectory() as tmp:
+            kernel = Path(tmp) / 'KERNEL'; kernel.write_bytes(b'wrong image')
+            script = tool.build(KEY, kernel_sha256='a' * 64)
+            # Stop the real generated installer at its read-only image gate.
+            script = script.replace('/boot/KERNEL', str(kernel))
+            script = script.replace('if (( EUID != 0 )); then exec sudo -- bash "$0" "$@"; fi', '')
+            start = script.index('for tool in ')
+            end = script.index('restore_readonly=0')
+            gate = script[start:end]
+            gate = gate[gate.index("printf '%s  %s\\n'"):]
+            result = subprocess.run(['bash', '-euc', gate], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('FAILED', result.stdout)
+
+    def test_installer_rejects_missing_or_ambiguous_identity_policy(self):
+        spec = importlib.util.spec_from_file_location('installer', REPO / 'scripts/build-rp6-access-installer.py')
+        tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)
+        for options in ({}, {'kernel_sha256': 'bad'},
+                        {'fingerprint': 'SHA256:' + 'a' * 43, 'kernel_sha256': 'b' * 64}):
+            with self.subTest(options=options), self.assertRaises(ValueError): tool.build(KEY, **options)
