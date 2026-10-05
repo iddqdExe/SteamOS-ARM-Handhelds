@@ -1,0 +1,111 @@
+{
+  "format": "rp6-up02-public-acceptance-1",
+  "module": "UP-02",
+  "decision": "accepted in tested scope",
+  "accepted_on": "2026-10-06",
+  "target": {
+    "model": "Retroid Pocket 6",
+    "soc": "SM8550",
+    "ram_gib": 12,
+    "media": "microSD"
+  },
+  "source_sha": "9880df50be4de4286e289ad7511b266dbeda7c82",
+  "base": "accepted UP-04 R3",
+  "donor_steamos_sha": "3b01fcc60759b590a064387379b6858c2cbbb3cd",
+  "donor_rocknix_sha": "3829f7c5a80a8a9e78576ea5a3bb0c1ceeebb939",
+  "image": {
+    "name": "steamos-rp6-up04-20261005-r3.img",
+    "bytes": 16447963136,
+    "sha256": "60b27302c7dd114da2d05b25211becc7c491b19f635c5846256c7aeb40736f91",
+    "assembly_source_sha": "f644f67182cbc6967efbfa82ef2f72a904cb0675",
+    "new_full_userspace_build": false
+  },
+  "kernel": {
+    "version": "7.2.8-sm8550-steamos",
+    "sha256": "a5e8fecca3bd890d77b0cc4df5bc2d508300c2b0946c6d898a90fadeb3d1854d",
+    "matched_arm64_modules": 280
+  },
+  "installation": {
+    "result": "full write/readback verified, ejected, Steam started",
+    "receipt_origin": "recovery after installer passed comparisons but initial eject failed",
+    "backups": "declined by user; none created"
+  },
+  "live_touch": {
+    "bus_hz": 400000,
+    "bulk_read": true,
+    "event": "/dev/input/event4",
+    "driver": "edt_ft5x06",
+    "orientation_properties": "preserved"
+  },
+  "touch_measurement": {
+    "result": "passed continuous-gesture Desktop measurement",
+    "duration_seconds": 30,
+    "frames": 3578,
+    "median_interval_ms": 8.365869522094727,
+    "active_report_hz": 119.53330103451223,
+    "syn_dropped": 0,
+    "baseline_comparison": "not performed; this is observed current evdev rate",
+    "evidence": "device-touch-gesture-coordinated-30s.json"
+  },
+  "manual_acceptance": {
+    "result": "passed-user-reported",
+    "checks": [
+      "edges",
+      "drag",
+      "multitouch",
+      "Game Mode",
+      "touch after standby resume"
+    ],
+    "user_reply": "Все работает",
+    "date": "2026-10-06",
+    "sleep_mode": "standby",
+    "automated_visual_verification": false
+  },
+  "post_manual_checks": {
+    "result": "passed",
+    "touch_clock_hz": 400000,
+    "bulk_read": true,
+    "failed_system_units": 0,
+    "debug_services_active": true,
+    "sleep_mode": "standby",
+    "evidence": "device-post-manual-checks.json"
+  },
+  "ssh": {
+    "host_fingerprint": "SHA256:YCFqM3nc0sdDcNytfEJwtSJ0HWp3T/TMzBZH30yuF3Q",
+    "verification": "matched physical user photo; strict SSH key authentication passed",
+    "privileged_access": "sudo requires password; no privileged SSH helper installed"
+  },
+  "diagnostics": {
+    "retained_after_acceptance": true,
+    "ssh_recovery_timer": "active",
+    "touch_timer": "active",
+    "boot_debug_collector": "active",
+    "persistent_journal_max_mib": 96,
+    "runtime_journal_max_mib": 32
+  },
+  "source_verification": {
+    "environment": "ARM64 Linux; actual kernel source and DTBs",
+    "tests": 273,
+    "failures": 0,
+    "skips": 0,
+    "log_sha256": "9039e5d249901cc265da2c6476a1eb4e404416f795425abca8316748c4a40016",
+    "independent_review": "passed after atomic report publication recovery fix"
+  },
+  "not_tested_in_this_task": [
+    "s2idle",
+    "full controls regression matrix",
+    "update package installation",
+    "rollback",
+    "before/after touch comparison",
+    "CI"
+  ],
+  "evidence_directory": "preparation/upstream-porting/UP-02/clean-install-20261006 (beside repository)",
+  "evidence_sha256": {
+    "device-touch-gesture-coordinated-30s.json": "ec38cce6d334593183529c75eef576ef3472877e79285cfce5ff90d717976af2",
+    "device-post-manual-checks.json": "50e72573d65a8476e33abfe8a945c412e5958bd650f99a8609afc06443d2e69f",
+    "device-manual-acceptance.json": "869c49d284aeddd8f6fa47f66d1d65b50abb843a74041857bc32c56da3abb0ab",
+    "ssh-host-verification.json": "905b61c3c48bdad35286863f9ae6a2e09a9bb5e8974206ff7850f261ebdb2801",
+    "device-system-snapshot.json": "e8f58a0f0f5dc687207800772f6c4a59c128c14c6bdd7b78e42aa5c4e6fee185",
+    "installation-receipt.json": "175727835105044b535c6ad7c33eda2711841da0b2095c12faf32e92d3821f39"
+  }
+}
