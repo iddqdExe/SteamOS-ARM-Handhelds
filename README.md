@@ -19,11 +19,13 @@ Automated source and build checks may run on development computers or CI. They d
 
 See [RP6 scope and test policy](docs/RP6-SCOPE.md).
 
-## Primary RP6 baseline (UP-04)
+## Primary RP6 baseline (UP-02 on UP-04)
 
 The primary SM8550 kernel in `main` is **7.2.8-sm8550-steamos**, with the accepted UP-04 suspend, recovery and boot fixes on top of UP-03. For `SOC=sm8550`, kernel builds select recipe 7.2/ROCKNIX and image builds use `kernel-sm8550/output/current` by default. GCC 15 and the locked Frame firmware inputs remain required. Select `SM8550_RECIPE=7.1` explicitly for the legacy recipe, or `SM8550_KERNEL=prebuilt` for an existing legacy bundle.
 
-UP-04 is the baseline for further work in `main`; see [UP-04 acceptance](docs/RP6-UP-04.ru.md) and [the acceptance record](docs/RP6-UP-04.acceptance.json). RP6/12 GB/microSD checks cover five short sleep cycles, charging, 767 seconds of battery-only sleep, DuckTales resume after the wake-key fix, and a subsequent boot with automatic SSH access. Permanent debugging stays enabled. S2idle remains an explicit opt-in; standby remains the default. R2 was clean-installed and the final wake guard was applied live; the assembled R3 image/package have separate validation records and R3 has not been clean-installed on hardware. Broader power measurements, charger/game matrices, physical rollback and CI remain separate checks. Source promotion does not publish a binary release.
+The accepted **UP-02 on UP-04 R3** is the baseline for further work in `main`; see [UP-02 acceptance](docs/RP6-UP-02.ru.md) and [the acceptance record](docs/RP6-UP-02.acceptance.json). The R3 image was clean-installed on RP6/12 GB/microSD and Steam started. Live touch uses 400 kHz I2C and bulk read; a coordinated 30-second gesture measured 119.53 evdev reports/s with no SYN_DROPPED. The user confirmed edges, dragging, multitouch, Game Mode and touch after standby. SSH uses a verified, pinned host key; permanent debugging and automatic SSH recovery remain enabled. The additional access/debug installer is applied after the sealed R3 image through `scripts/build-rp6-access-installer.py`; the image hash identifies the original sealed artifact, before this setup.
+
+UP-04 suspend, recovery and boot fixes remain part of this baseline; see [UP-04 acceptance](docs/RP6-UP-04.acceptance.json) for its earlier s2idle and game-resume checks. Standby remains the default and s2idle is an explicit opt-in. The UP-02 checks cover standby resume. Before/after touch comparisons, full controls regression, update/rollback, broader power/game/charger matrices and CI remain separate checks. Source promotion does not publish a binary release. Local build images and caches are removed after promotion at the project owner's request; source recipes, checksums and acceptance evidence are retained.
 
 ## Development priorities
 

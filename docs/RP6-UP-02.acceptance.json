@@ -107,5 +107,28 @@
     "ssh-host-verification.json": "905b61c3c48bdad35286863f9ae6a2e09a9bb5e8974206ff7850f261ebdb2801",
     "device-system-snapshot.json": "e8f58a0f0f5dc687207800772f6c4a59c128c14c6bdd7b78e42aa5c4e6fee185",
     "installation-receipt.json": "175727835105044b535c6ad7c33eda2711841da0b2095c12faf32e92d3821f39"
+  },
+  "source_promotion": {
+    "branch": "main",
+    "foundation": "accepted UP-02 on UP-04 R3",
+    "authorization": "Explicit user instruction to make this version the baseline, publish to main and clean temporary project files/images",
+    "kernel_recipe": "7.2",
+    "sleep_default": "standby; s2idle explicit opt-in",
+    "debug_setup": "Generated access installer applied after clean R3 installation"
+  },
+  "local_artifact_retention": {
+    "build_images_packages_caches": "removed after main promotion at user request",
+    "source_recipes_checksums_acceptance_evidence": "retained",
+    "binary_release_publication": "not performed"
+  },
+  "integration_verification": {
+    "date": "2026-10-06",
+    "tests": 273,
+    "failures": 0,
+    "skips": 0,
+    "environment": "ARM64 Linux; locked kernel source and actual DTBs",
+    "log_sha256": "baff2fd5d65030661e32a76fcd830f17793b2ce805e2bb1ee68a1396df1a2a20",
+    "integration": "fast-forward of verified source tree; documentation-only baseline update",
+    "ci": "kept paused with skip-ci commit marker"
   }
 }
